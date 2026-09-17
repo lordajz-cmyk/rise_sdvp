@@ -340,8 +340,8 @@ def vehicle_types():
         conn = sqlite3.connect('data.db')
         cursor = conn.cursor()
         
-        # Query all vehicle types from the table
-        cursor.execute('SELECT id, name, typeofsteering, length_m, width_m FROM vehicle_types')
+        # Query all vehicle types from the table using correct database column names (length, wtidth)
+        cursor.execute('SELECT id, name, typeofsteering, length, wtidth FROM vehicle_types')
         vehicle_types = cursor.fetchall()
         conn.close()
         
