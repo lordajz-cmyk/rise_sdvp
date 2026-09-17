@@ -35,10 +35,10 @@ def serve_paths(filename):
 def list_machines():
     try:
         result = subprocess.run(
-            ['nmap', '-sn', '--max-rtt-timeout', '20ms', '--max-retries', '0', '192.168.200.0/24'],
+            ['nmap', '-sn', '--min-parallelism', '100', '--max-rtt-timeout', '800ms', '--max-retries', '1', '192.168.200.0/24'],
             capture_output=True,
             text=True,
-            timeout=5
+            timeout=12
         )
         # Parse output to extract IP addresses of active hosts (only from "Nmap scan report for" lines)
         import re
