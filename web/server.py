@@ -71,6 +71,7 @@ def list_machines():
         
         # Convert to XML string with declaration
         xml_str = '<?xml version="1.0" encoding="UTF-8"?>\n' + ET.tostring(root, encoding='unicode')
+        xml_str = xml_str.replace('<machines />', '<machines></machines>')
         
         # Write to file
         with open('found_machines.xml', 'w') as f:
