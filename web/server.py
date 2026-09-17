@@ -35,10 +35,10 @@ def serve_paths(filename):
 def list_machines():
     try:
         result = subprocess.run(
-            ['nmap', '-sP', '192.168.200.3/24'],
+            ['nmap', '-sn', '--max-rtt-timeout', '20ms', '--max-retries', '0', '192.168.200.0/24'],
             capture_output=True,
             text=True,
-            timeout=30
+            timeout=5
         )
         # Parse output to extract IP addresses
         import re
