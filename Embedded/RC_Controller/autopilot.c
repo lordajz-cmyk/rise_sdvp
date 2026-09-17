@@ -379,17 +379,17 @@ void autopilot_sync_point(int32_t point, int32_t time, int32_t min_time_diff) {
 		}
 	}
 
-	// Calculate required speed to reach target point at specified time
-	float speed = dist_tot / ((float)time / 1000.0);
-	// Limit speed to maximum configured speed
-	utils_truncate_number_abs(&speed, main_config.ap_max_speed);
-
 	// Skip synchronization if time or distance is too small
 	if (time < min_time_diff || dist_tot < main_config.ap_base_rad) {
 //		m_sync_rx = false;
 		chMtxUnlock(&m_ap_lock);
 		return;
 	}
+
+	// Calculate required speed to reach target point at specified time
+	float speed = dist_tot / ((float)time / 1000.0);
+	// Limit speed to maximum configured speed
+	utils_truncate_number_abs(&speed, main_config.ap_max_speed);
 
 	// Update speed for all points from current position to target point
 	point_i = m_point_now;

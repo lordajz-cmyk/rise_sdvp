@@ -14,7 +14,7 @@
 #define CH_CFG_USE_SEMAPHORES            TRUE
 #define CH_CFG_USE_MUTEXES               TRUE
 #define CH_CFG_USE_CONDVARS              FALSE
-#define CH_CFG_USE_EVENTS                FALSE
+#define CH_CFG_USE_EVENTS                TRUE
 #define CH_CFG_USE_MESSAGES              FALSE
 #define CH_CFG_USE_MAILBOXES             FALSE
 #define CH_CFG_USE_HEAP                  FALSE

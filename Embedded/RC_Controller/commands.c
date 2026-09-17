@@ -557,6 +557,9 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 		} break;
 
 		case CMD_SEND_RTCM_USB: {
+#if UBLOX_EN
+			ublox_send(data, len);
+#endif
 			for (unsigned int i = 0;i < len;i++) {
 				rtcm3_input_data(data[i], &m_rtcm_state);
 			}
@@ -1471,7 +1474,10 @@ static void rtcm_rx(uint8_t *data, int len, int type) {
 	(void)type;
 
 #if UBLOX_EN
-	ublox_send(data, len);
+	// We now send the raw RTCM data directly in CMD_SEND_RTCM_USB to prevent
+	// message filtering/latency, so we do not send it again here.
+	(void)data;
+	(void)len;
 	(void)m_send_buffer;
 #else
 	int32_t send_index = 0;

@@ -700,9 +700,14 @@ void utils_closest_point_line(const ROUTE_POINT *point1, const ROUTE_POINT *poin
 
 	const float ab2 = dx * dx + dy * dy;
 	const float ap_ab = d1x * dx + d1y * dy;
-	float t = ap_ab / ab2;
+	float t;
+	if (ab2 <= 1e-6f) {
+		t = 0.0f;
+	} else {
+		t = ap_ab / ab2;
+	}
 
-	if (t < 0.0) {
+	if (t < 0.0f) {
 		t = 0.0;
 	} else if (t > 1.0) {
 		t = 1.0;

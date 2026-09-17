@@ -309,6 +309,18 @@ void ublox_init(void) {
 
 	ublox_cfg_rate(200, 1, 0);
 
+	// Also configure UART2 to 115200 and enable RTCM3 input
+	ubx_cfg_prt_uart uart2;
+	uart2.baudrate = 115200;
+	uart2.in_ubx = true;
+	uart2.in_nmea = false;
+	uart2.in_rtcm2 = false;
+	uart2.in_rtcm3 = true;
+	uart2.out_ubx = true;
+	uart2.out_nmea = false;
+	uart2.out_rtcm3 = false;
+	ublox_cfg_prt_uart2(&uart2);
+
 	// Dynamic model
 	ubx_cfg_nav5 nav5;
 	memset(&nav5, 0, sizeof(ubx_cfg_nav5));
@@ -410,6 +422,10 @@ void ublox_send(unsigned char *data, unsigned int len) {
 		return;
 	}
 
+	if (len > 2048) {
+		len = 2048;
+	}
+
 	// Wait for the previous transmission to finish.
 	while (HW_UART_DEV.txstate == UART_TX_ACTIVE) {
 		chThdSleep(1);
@@ -417,7 +433,7 @@ void ublox_send(unsigned char *data, unsigned int len) {
 
 	// Copy this data to a new buffer in case the provided one is re-used
 	// after this function returns.
-	static uint8_t buffer[1024];
+	static uint8_t buffer[2048];
 	memcpy(buffer, data, len);
 
 	uartStartSend(&HW_UART_DEV, len, buffer);
@@ -468,6 +484,44 @@ int ublox_cfg_prt_uart(ubx_cfg_prt_uart *cfg) {
 	int ind = 0;
 
 	ubx_put_U1(buffer, &ind, 1); // ID for UART1
+	ubx_put_U1(buffer, &ind, 0);
+	ubx_put_X2(buffer, &ind, 0); // Always disable txready function
+
+	uint32_t mode = 0;
+	mode |= 3 << 6; // Always use 8 bits
+	mode |= 4 << 9; // No parity
+	mode |= 0 << 12; // 1 stop bit
+
+	ubx_put_X4(buffer, &ind, mode);
+	ubx_put_U4(buffer, &ind, cfg->baudrate);
+
+	uint16_t in_proto = 0;
+	in_proto |= (cfg->in_ubx ? 1 : 0) << 0;
+	in_proto |= (cfg->in_nmea ? 1 : 0) << 1;
+	in_proto |= (cfg->in_rtcm2 ? 1 : 0) << 2;
+	in_proto |= (cfg->in_rtcm3 ? 1 : 0) << 5;
+
+	ubx_put_X2(buffer, &ind, in_proto);
+
+	uint16_t out_proto = 0;
+	out_proto |= (cfg->out_ubx ? 1 : 0) << 0;
+	out_proto |= (cfg->out_nmea ? 1 : 0) << 1;
+	out_proto |= (cfg->out_rtcm3 ? 1 : 0) << 5;
+
+	ubx_put_X2(buffer, &ind, out_proto);
+	ubx_put_X2(buffer, &ind, 0); // No extended timeout
+	ubx_put_U1(buffer, &ind, 0);
+	ubx_put_U1(buffer, &ind, 0);
+
+	ubx_encode_send(UBX_CLASS_CFG, UBX_CFG_PRT, buffer, ind);
+	return wait_ack_nak(CFG_ACK_WAIT_MS);
+}
+
+int ublox_cfg_prt_uart2(ubx_cfg_prt_uart *cfg) {
+	uint8_t buffer[20];
+	int ind = 0;
+
+	ubx_put_U1(buffer, &ind, 2); // ID for UART2
 	ubx_put_U1(buffer, &ind, 0);
 	ubx_put_X2(buffer, &ind, 0); // Always disable txready function
 

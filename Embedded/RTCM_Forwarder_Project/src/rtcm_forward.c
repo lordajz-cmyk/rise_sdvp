@@ -64,7 +64,7 @@ static THD_FUNCTION(RTCMForwarder, arg) {
 
             // Forward to UART
             for (int i = 0; i < bytes_read; i++) {
-                uartStreamPut(uart_stream, buffer[i]);
+                chSequentialStreamPut((BaseSequentialStream*)uart_stream, buffer[i]);
             }
         }
 

@@ -1,9 +1,10 @@
 // Main file for RTCM forwarder
 #include "ch.h"
 #include "hal.h"
-//#include "lwipthread.h"
-//#include "rtcm_forward.h"
+#include "lwipthread.h"
+#include "rtcm_forward.h"
 #include "chprintf.h"
+#include "usbconf.h"
 
 static BaseSequentialStream *debug_stream = NULL;
 
@@ -13,7 +14,7 @@ int main(void) {
     chSysInit();
 
     // Setup UART for debug output (via USB CDC)
-    sdStart(&SDU1, NULL); // USB-CDC Serial
+    sduStart(&SDU1, &serusbcfg); // USB-CDC Serial
     debug_stream = (BaseSequentialStream*)&SDU1;
 
     // Setup UART for RTCM forwarding (to F9P)

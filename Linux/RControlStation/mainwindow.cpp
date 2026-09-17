@@ -788,7 +788,7 @@ bool MainWindow::eventFilter(QObject *object, QEvent *e)
                                 qDebug() << "Deleting machine with ID:" << machineId;
                                 
                                 // Send DELETE request to remove the machine
-                                QUrl url("http://192.168.200.3:8080/remove_machine");
+                                QUrl url("http://192.168.200.1:8080/remove_machine");
                                 QUrlQuery query;
                                 query.addQueryItem("id", machineId);
                                 url.setQuery(query);
@@ -1701,7 +1701,7 @@ void MainWindow::onUnconnectedFieldsTableItemClicked(QTableWidgetItem *item)
     mMapWidgetFileAdmin->update();
     
     // Load the file from the server via HTTP
-    QUrl url(QString("http://192.168.200.3:8080/field/%1").arg(filename));
+    QUrl url(QString("http://192.168.200.1:8080/field/%1").arg(filename));
     qDebug() << "Fetching field from URL:" << url.toString();
     
     QNetworkRequest request(url);
@@ -2560,7 +2560,7 @@ void MainWindow::fetchMachinesData(int retryCount)
     const int MAX_RETRIES = 3;
     const int RETRY_DELAY_MS = 2000; // 2 seconds between retries
     
-    QUrl url("http://192.168.200.3:8080/machines");
+    QUrl url("http://192.168.200.1:8080/machines");
     QNetworkRequest request(url);
     
     // Set a timeout for the request (10 seconds to be safe)
@@ -2724,7 +2724,7 @@ void MainWindow::fetchAllMachinesData(int retryCount)
     const int MAX_RETRIES = 3;
     const int RETRY_DELAY_MS = 2000; // 2 seconds between retries
     
-    QUrl url("http://192.168.200.3:8080/all_machines");
+    QUrl url("http://192.168.200.1:8080/all_machines");
     QNetworkRequest request(url);
     
     // Set a timeout for the request (10 seconds to be safe)
@@ -2804,7 +2804,7 @@ void MainWindow::fetchAllFarmsData(int retryCount)
     const int MAX_RETRIES = 3;
     const int RETRY_DELAY_MS = 2000; // 2 seconds between retries
     
-    QUrl url("http://192.168.200.3:8080/all_farms");
+    QUrl url("http://192.168.200.1:8080/all_farms");
     QNetworkRequest request(url);
     
     // Set a timeout for the request (10 seconds to be safe)
@@ -2913,7 +2913,7 @@ void MainWindow::fetchAllFarmsForLog()
     // Add loading indicator
     logFarmsModel->appendRow(new QStandardItem("Loading farms..."));
     
-    QUrl url("http://192.168.200.3:8080/all_farms");
+    QUrl url("http://192.168.200.1:8080/all_farms");
     QNetworkRequest request(url);
     request.setTransferTimeout(10000);
     
@@ -3022,7 +3022,7 @@ void MainWindow::fetchFieldsForLogFarm(int farmId)
     // Add loading indicator
     logFieldsModel->appendRow(new QStandardItem("Loading fields..."));
     
-    QUrl url("http://192.168.200.3:8080/all_fields");
+    QUrl url("http://192.168.200.1:8080/all_fields");
     QUrlQuery query;
     query.addQueryItem("farm", QString::number(farmId));
     url.setQuery(query);
@@ -3134,7 +3134,7 @@ void MainWindow::fetchPathsForLogField(int fieldId)
     // Add loading indicator
     logPathsModel->appendRow(new QStandardItem("Loading paths..."));
     
-    QUrl url("http://192.168.200.3:8080/all_paths");
+    QUrl url("http://192.168.200.1:8080/all_paths");
     QUrlQuery query;
     query.addQueryItem("field", QString::number(fieldId));
     url.setQuery(query);
@@ -3235,7 +3235,7 @@ void MainWindow::loadPathAsLog(int pathId)
 {
     qDebug() << "loadPathAsLog: Starting for pathId:" << pathId;
     
-    QUrl url("http://192.168.200.3:8080/log");
+    QUrl url("http://192.168.200.1:8080/log");
     QUrlQuery query;
     query.addQueryItem("path", QString::number(pathId));
     url.setQuery(query);
@@ -3385,7 +3385,7 @@ void MainWindow::fetchLogsForPath(int pathId)
     // Add loading indicator
     logLogsModel->appendRow(new QStandardItem("Loading logs..."));
     
-    QUrl url("http://192.168.200.3:8080/all_logs");
+    QUrl url("http://192.168.200.1:8080/all_logs");
     QUrlQuery query;
     query.addQueryItem("path", QString::number(pathId));
     url.setQuery(query);
@@ -3486,7 +3486,7 @@ void MainWindow::fetchLogForLog(int logId)
 {
     qDebug() << "fetchLogForLog: Starting for logId:" << logId;
     
-    QUrl url("http://192.168.200.3:8080/log");
+    QUrl url("http://192.168.200.1:8080/log");
     QUrlQuery query;
     query.addQueryItem("id", QString::number(logId));
     url.setQuery(query);
@@ -3578,7 +3578,7 @@ void MainWindow::fetchAllFieldsData(int farmId, int retryCount)
     const int MAX_RETRIES = 3;
     const int RETRY_DELAY_MS = 2000; // 2 seconds between retries
     
-    QUrl url("http://192.168.200.3:8080/all_fields");
+    QUrl url("http://192.168.200.1:8080/all_fields");
     QUrlQuery query;
     query.addQueryItem("farm", QString::number(farmId));
     url.setQuery(query);
@@ -3687,7 +3687,7 @@ void MainWindow::fetchUnconnectedFieldsData(int retryCount)
     mUnconnectedFieldsTable->insertRow(0);
     mUnconnectedFieldsTable->setItem(0, 0, new QTableWidgetItem(retryCount > 0 ? QString("Retrying... (%1/%2)").arg(retryCount).arg(MAX_RETRIES) : "Loading..."));
 
-    QUrl url("http://192.168.200.3:8080/unconnected_fields");
+    QUrl url("http://192.168.200.1:8080/unconnected_fields");
     QNetworkRequest request(url);
     request.setTransferTimeout(10000);
 
@@ -3753,7 +3753,7 @@ void MainWindow::fetchAllPathsData(int fieldId, int retryCount)
     const int MAX_RETRIES = 3;
     const int RETRY_DELAY_MS = 2000; // 2 seconds between retries
     
-    QUrl url("http://192.168.200.3:8080/all_paths");
+    QUrl url("http://192.168.200.1:8080/all_paths");
     QUrlQuery query;
     query.addQueryItem("field", QString::number(fieldId));
     url.setQuery(query);
@@ -3849,7 +3849,7 @@ void MainWindow::fetchVehicleTypes(int retryCount)
     const int MAX_RETRIES = 3;
     const int RETRY_DELAY_MS = 2000; // 2 seconds between retries
     
-    QUrl url("http://192.168.200.3:8080/vehicle_types");
+    QUrl url("http://192.168.200.1:8080/vehicle_types");
     QNetworkRequest request(url);
     
     // Set a timeout for the request (10 seconds to be safe)
@@ -4471,7 +4471,7 @@ void MainWindow::parseAllPathsXml(const QByteArray &xmlData)
 
 void MainWindow::addFarmToServer(const QString &name)
 {
-    QUrl url("http://192.168.200.3:8080/add_farm");
+    QUrl url("http://192.168.200.1:8080/add_farm");
     QUrlQuery query;
     query.addQueryItem("name", name);
     url.setQuery(query);
@@ -4501,7 +4501,7 @@ void MainWindow::addFarmToServer(const QString &name)
 
 void MainWindow::updateFarmOnServer(int farmId, const QString &name, double latitude, double longitude)
 {
-    QUrl url("http://192.168.200.3:8080/edit_farm");
+    QUrl url("http://192.168.200.1:8080/edit_farm");
     QUrlQuery query;
     query.addQueryItem("id", QString::number(farmId));
     query.addQueryItem("name", name);
@@ -4534,7 +4534,7 @@ void MainWindow::updateFarmOnServer(int farmId, const QString &name, double lati
 
 void MainWindow::deleteFarmFromServer(int farmId)
 {
-    QUrl url("http://192.168.200.3:8080/remove_farm");
+    QUrl url("http://192.168.200.1:8080/remove_farm");
     QUrlQuery query;
     query.addQueryItem("id", QString::number(farmId));
     url.setQuery(query);
@@ -4564,7 +4564,7 @@ void MainWindow::deleteFarmFromServer(int farmId)
 
 void MainWindow::fetchFieldXml(int fieldId, const QString &fieldName)
 {
-    QUrl url("http://192.168.200.3:8080/field");
+    QUrl url("http://192.168.200.1:8080/field");
     QUrlQuery query;
     query.addQueryItem("id", QString::number(fieldId));
     url.setQuery(query);
@@ -4648,7 +4648,7 @@ void MainWindow::onFieldDataChanged(const QModelIndex &topLeft, const QModelInde
 
 void MainWindow::addFieldToServer(const QString &name, int farmId, const QString &filename)
 {
-    QUrl url("http://192.168.200.3:8080/add_field");
+    QUrl url("http://192.168.200.1:8080/add_field");
     QUrlQuery query;
     query.addQueryItem("name", name);
     query.addQueryItem("farm_id", QString::number(farmId));
@@ -4685,7 +4685,7 @@ void MainWindow::updateFieldOnServer(int fieldId, const QString &name, const QSt
 {
     qDebug() << "updateFieldOnServer called with fieldId:" << fieldId << "name:" << name << "filename:" << filename;
     
-    QUrl url("http://192.168.200.3:8080/edit_field");
+    QUrl url("http://192.168.200.1:8080/edit_field");
     QUrlQuery query;
     query.addQueryItem("id", QString::number(fieldId));
     query.addQueryItem("name", name);
@@ -4731,7 +4731,7 @@ void MainWindow::updateFieldOnServer(int fieldId, const QString &name, const QSt
 
 void MainWindow::deleteFieldFromServer(int fieldId)
 {
-    QUrl url("http://192.168.200.3:8080/remove_field");
+    QUrl url("http://192.168.200.1:8080/remove_field");
     QUrlQuery query;
     query.addQueryItem("id", QString::number(fieldId));
     url.setQuery(query);
@@ -4764,7 +4764,7 @@ void MainWindow::deleteFieldFromServer(int fieldId)
 
 void MainWindow::addPathToServer(const QString &name, int fieldId)
 {
-    QUrl url("http://192.168.200.3:8080/add_path");
+    QUrl url("http://192.168.200.1:8080/add_path");
     QUrlQuery query;
     query.addQueryItem("name", name);
     query.addQueryItem("field", QString::number(fieldId));
@@ -4795,7 +4795,7 @@ void MainWindow::addPathToServer(const QString &name, int fieldId)
 
 void MainWindow::updatePathOnServer(int pathId, const QString &name)
 {
-    QUrl url("http://192.168.200.3:8080/edit_path");
+    QUrl url("http://192.168.200.1:8080/edit_path");
     QUrlQuery query;
     query.addQueryItem("id", QString::number(pathId));
     query.addQueryItem("name", name);
@@ -4834,7 +4834,7 @@ void MainWindow::updatePathOnServer(int pathId, const QString &name)
 
 void MainWindow::deletePathFromServer(int pathId)
 {
-    QUrl url("http://192.168.200.3:8080/remove_path");
+    QUrl url("http://192.168.200.1:8080/remove_path");
     QUrlQuery query;
     query.addQueryItem("id", QString::number(pathId));
     url.setQuery(query);
@@ -4893,7 +4893,7 @@ void MainWindow::onAddMachineButtonClicked()
     }
     
     // Create the URL with query parameters
-    QUrl url("http://192.168.200.3:8080/add_machine");
+    QUrl url("http://192.168.200.1:8080/add_machine");
     QUrlQuery query;
     query.addQueryItem("name", name);
     query.addQueryItem("ip", ip);

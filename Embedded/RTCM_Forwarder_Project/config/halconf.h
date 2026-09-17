@@ -5,7 +5,7 @@
 #include "mcuconf.h"
 
 #define HAL_USE_PAL                     TRUE
-#define HAL_USE_SERIAL                  FALSE
+#define HAL_USE_SERIAL                  TRUE
 #define HAL_USE_USB                     TRUE
 #define HAL_USE_RTC                     FALSE
 #define HAL_USE_SERIAL_USB 				TRUE
@@ -21,7 +21,7 @@
 /* Other HAL modules, enable or disable as needed */
 #define HAL_USE_I2C                 FALSE
 #define HAL_USE_SPI                 FALSE
-#define HAL_USE_SERIAL              FALSE
+#define HAL_USE_SERIAL                  TRUE
 #define HAL_USE_SDE                 FALSE
 
 #endif /* _HALCONF_H_ */
