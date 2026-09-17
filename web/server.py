@@ -40,13 +40,15 @@ def list_machines():
             text=True,
             timeout=5
         )
-        # Parse output to extract IP addresses
+        # Parse output to extract IP addresses of active hosts (only from "Nmap scan report for" lines)
         import re
-        ip_pattern = r'\b(?:\d{1,3}\.){3}\d{1,3}\b'
-        ips = re.findall(ip_pattern, result.stdout)
-        # Remove duplicates and 192.168.200.3, then sort
-        #unique_ips = sorted(set(ips) - {'192.168.200.3'})
-        unique_ips = sorted(set(ips))
+        unique_ips = []
+        for line in result.stdout.splitlines():
+            if "Nmap scan report for" in line:
+                match = re.search(r'\b(?:\d{1,3}\.){3}\d{1,3}\b', line)
+                if match:
+                    unique_ips.append(match.group(0))
+        unique_ips = sorted(set(unique_ips))
         
         # Look up names and vehicle types from database
         conn = sqlite3.connect('data.db')
