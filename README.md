@@ -1,119 +1,74 @@
-# RISE-SDVP at Macbot and Drängen 
+# 🛰️ RISE SDVP - Optimerat & Helautomatiserat Styrsystem (lordajz-cmyk branch)
 
-This is a fork of https://github.com/vedderb/rise_sdvp (further developed as https://github.com/RISE-Dependable-Transport-Systems/ControlTower). Look there for documentation etc.
+Välkommen till den optimerade och helautomatiska releasen av **RISE SDVP** styrsystemet för autonoma fordon och jordbruksrobotar. Denna version är helt fristående, åtgärdar kritiska mjukvarubuggar och introducerar ett kraftfullt installationsramverk som gör driftsättning av nya maskiner till en lek.
 
-On this page you find information specific for its application on the Macbot and Drängen. For videos of the machines put into practise at [Youtube](https://www.youtube.com/@mactrac1)
+---
 
+## 🚀 Kritiska Förbättringar i denna Release (Bugfixes)
 
-## Hardware
+De manuella handpåläggningarna och instabiliteten från originalkoden är nu ett minne blott. Följande kritiska förbättringar har implementerats:
 
-The figure below shows a current hardware diagram of the implementation of the RISE-SDVP platform. The light blue-colored boxes to the left are the components on Macbot/Drängen and the green boxes to the right are a laptop computer connected over internet to the vehicle. The laptop computer also runs a RTK-GNSS base station, so that the model car can position itself with around 3 cm accuracy relative to the GNSS antenna connected to the receiver on the laptop.
+1. **RTK-stabilitet & Ingen Flaskhals:** RTCM-data skickas nu rå direkt till u-blox-mottagaren (vilket utnyttjar hårdvaruavkodning för MSM7-meddelanden för full GNSS-precision: GPS, Galileo, BeiDou, GLONASS).
+2. **Eliminerat Buffertspill:** Ökat bufferten i `ublox_send` från 1024 till 2048 bytes samt lagt till en hård storlekskontroll som helt förhindrar minneskorruption.
+3. **Synkroniserad Baudrate:** Styrkortet konfigurerar automatiskt u-blox UART2 till `115200` baud vid uppstart så att dataströmmarna matchar perfekt.
+4. **Säkrad Autopilot-matematik:** 
+   * Skydd mot division-med-noll i `autopilot.c` vid tidssynkronisering.
+   * Skydd mot NaN-förstörande beräkningar i `utils.c` (`utils_closest_point_line`) vilket eliminerar autopilot-krascher nära ruttens brytpunkter.
+5. **Robust Webbserver:** Flask-webbservern har uppdaterats till att binda mot `0.0.0.0` istället för en hårdkodad IP, vilket gör att den startar smärtfritt på alla typer av nätverk.
 
+---
 
-Hardware components used:
+## 📦 Helautomatiserad Installation (Quick Start)
 
-- A [Controller](Hardware/Controller) that runs the embedded software that controls the motion and estimates the position of the vehicle (Macbot or Drängen).
-- An embedded Linux computer, in our case a [Raspberry PI](https://www.raspberrypi.org/) or a Jetson Xavier running [Car_Client](Linux/Car_Client) on that computer. It communicates with the [Controller PCB](Hardware/Controller) using one or two USB cable(s) and with [RControlStation](Linux/RControlStation) using any internet connection.
-- A computer that runs the [RControlStation](Linux/RControlStation) software.
-- A [VESC](https://vesc-project.com) motor controller that can control motors on the vehicle over CAN-bus, and provides speed and position estimation from the motor that is used in the sensor fusion in the controller.
+Du behöver inte längre installera bibliotek manuellt, konfigurera udev-regler eller bygga programmen steg för steg. Allt görs med våra smarta installationsskript!
 
-### Hardware components @ Macbot
-
-![Hardware Diagram](Documentation/overview.png)
-
-### Hardware components @ Macbot
-
-(to add - same as above, but without the IO unit)
-It is possible to attach an Arduino to the Raspberry to attach various sensors.
-
-## Steering Geometries
-
-There is currently support for two different steering geometries: _Ackermann_ and _Differential_. In Ackermann steering mode there is one main motor driving the car, and a steering servo controlling the direction; whereas in differential mode there is one motor that drives the wheels on each side of the car and there is no steering servo. By default, the controller is configured for Ackermann steering, but that, and many other settings, can be changed in [conf_general.h](Embedded/RC_Controller/conf_general.h):
-
-```
-// Set to 1 to enable differential steering
-#define HAS_DIFF_STEERING			1
-// CAN ID of VESC motor controller for the left motor
-#define DIFF_STEERING_VESC_LEFT		0
-// CAN ID of VESC motor controller for the right motor
-#define DIFF_STEERING_VESC_RIGHT	1
+### 🚜 1. Installera Allt (Raspberry Pi + Styrkort)
+Om du är inkopplad mot din Raspberry Pi och vill göra en komplett installation (bygga klienten, konfigurera udev, ställa in Swepos RTK och ladda upp mjukvaran till styrkortet):
+```bash
+sudo ./install_allt.sh
 ```
 
-In addition to updating _conf_general.h_, geometry parameters for the car also have to be updated in RControlStation, as shown in Figure 3:
+---
 
-![Car Settings](Documentation/Pictures/GUI/car_settings.png)
+## 🛠️ De Smarta Skripten (Skript-by-Skript)
 
-The most important parameters for Ackermann steering are listed in the following table. Some of them are not used in differential steering mode.
+Detta arkiv innehåller sex helt nya, interaktiva skript som gör grovjobbet åt dig:
 
-| Parameter      | Description             |
-|--------------  |-----------------------------------------------------------------------------|
-| Gear Ratio     | The ratio between one wheel revolution and one motor revolution.            |
-| Turn Radius    | The radius of the circle the car follows at maximum steering angle.         |
-| Wheel Diameter | Diameter of the model car wheels.                                           |
-| Axis Distance  | Distance between front and rear wheel axis.                                 |
-| Motor Poles    | Number of motor poles. Usually 2 or 4 for inrunners.                        |
-| Servo Center   | PWM signal to output to steering servo when going straight [0 - 1].         |
-| Servo Range    | Steering range. Negative numbers invert the servo direction [-1 - 1].       |
+### `install_pi.sh` (Raspberry Pi-konfigurering)
+Konfigurerar robotens Raspberry Pi 4 från grunden.
+* Installerar alla nödvändiga Linux-paket och Qt6-miljö (med graciös fallback till Qt5).
+* Installerar dubbla udev-regler för USB-portar (stödjer både `/dev/car`/`/dev/ublox` och Benjamin Vedders referensnamn `/dev/vehicle`/`/dev/rtk` samtidigt).
+* Bygger `Car_Client` och sätter upp en interaktiv Swepos RTK-konfiguration för automatisk uppkoppling vid start.
+* Lägger till autostart i en bakgrunds-`screen` (`screen -r car` för att visa live).
 
-It is important to get these parameters correct, as they have a large impact on the position estimation and autopilot.
+### `install_dator.sh` (Utvecklingsdator / Laptop)
+Installerar och bygger kontrollstationens gränssnitt (**RControlStation**) på din laptop.
+* Detekterar automatiskt din Ubuntu-version (t.ex. 22.04 eller 24.04).
+* Installerar rätt beroenden och kompilerar hela applikationen med CMake.
 
-## Setting up a Raspberry Pi Image to run Car_Client
+### `flash_styrkort.sh` (STM32-programmering & Skrivbordstest)
+Kompilerar styrkortets mjukvara (Drängen eller Mactrac) och laddar upp den till styrkortet.
+* Bygger mjukvaran och flashar styrkortet via en **ST-LINK V2** med OpenOCD.
+* **Skrivbordstest:** Direkt efter lyckad flashning startas en interaktiv live-strömning av satellitdata (NMEA) direkt i terminalfönstret för direkt hårdvaruverifiering!
 
-Pull the code from the repository to update to the latest version:
+### `wireguard.sh` (Sömlös VPN-anslutning)
+Ett intelligent installationsskript som sätter upp WireGuard VPN på din robot eller laptop.
+* Genererar kryptonycklar automatiskt.
+* Låter dig skriva in valfritt maskinnamn och valfri IP-adress i VPN-nätverket (`192.168.200.X`) med intelligenta standardval.
+* Skapar den färdiga `/etc/wireguard/wg0.conf` och aktiverar automatisk start vid boot.
 
-```
-cd ~/rise_sdvp
-git pull
-```
+### `wireguard_admin.sh` (VPN-Server Administration)
+Körs på servern (`192.168.200.1`) för att administrera nätverket.
+* Initierar en helt ny VPN-server från grunden samt sätter upp IP-forwarding/NAT-routing automatiskt.
+* Registrerar nya klienter (peers) live utan att störa befintliga anslutningar (`wg syncconf`).
+* Listar, hanterar och raderar registrerade användare enkelt.
 
-At boot there is a screen session that starts automatically that runs Car_Client. Before rebuilding Car_Client, the screen session should be stopped with
+---
 
-```
-killall screen
-```
+## 📚 Tillgängliga Guider (Dokumentation)
 
-Then Car_Client should be rebuilt
-
-```
-cd ~/rise_sdvp/Linux/Car_Client
-qmake
-make clean
-make
-```
-After that Car_Client can be started, and a connection can be made from RControlStation:
-
-```
-./Car_Client -p /dev/car --useudp --logusb --usetcp
-```
-
-Notice that there are udev rules that map the USB-serial device of the Controller to _/dev/car_
-
-If you are attaching an arduino add
-
-```
---ttyportarduino /dev/ttyUSB0
-```
-
-to the call, where ttyUSBO is the port used.
-
-The next time the raspberry pi boots it will start a screen session with Car_Client. This is done from the ~/start_screen script. It might be a good idea to check if the Car_Client command in that script has the correct arguments for the latest version of rise_sdvp. At this time it should be
-
-```
-screen -d -m -S car bash -c 'cd /home/pi/rise_sdvp/Linux/Car_Client && ./Car_Client -p /dev/car --useudp --logusb --usetcp ; bash'
-```
-
-# Command flow
-
-- **main.cpp** (function main) - Starts application (of class 'MainWindow') on laptop
-- **MainWindow (hpp/cpp)** - Main Window class on the laptop. Some important aspects:
-  - Inherits QT class 'QMainWindow'
-  - Constructor initiates a large number of components, including some timers and [signals and slots](https://en.wikipedia.org/wiki/Signals_and_slots)
-  - Contains connections to the vehicles via its member 'QList<CarInterface*> mCars'
-  - Function 'timerSlot' loops continuously. It checks joystick values, if relevant send them to the vehicle, check vehicle status etc.
-- **CarInterface (hpp/cpp)** - Some (high level) communication with the vehicle
-  - setControlValues - sends steering information to the vehicle (via signal/slots setRcCurrent and setRcDuty)
-  - setStateData - shows data received from the vehicle in the GUI
-- **PacketInterface (hpp/cpp)** - (Low level) communication with the vehicle. For the format used see [information at the controller](Embedded/RC_Controller/README.md)  
-  - sendPacket - send packet to vehicle
-  - processPacket - processes packets received from the vehicle
-  
+För djupgående detaljer och manualer, läs våra nyskapade guider i roten av detta projekt:
+* 📜 **`installationsguide.md`:** ASCII-kopplingsschema för ST-LINK V2, SWD-pinouts och trådlös SSH-anslutning.
+* 📜 **`Sakerhetsanalys.md`:** Djupgående analys av cybersäkerhet (VPN), realtidssäkerhet (failsafe-kontroller i `timeout.c`), kodintegritet och fysiska nödstopp.
+* 📜 **`Wireguard_Guide.md`:** Komplett guide för hur du sätter upp en helt ny WireGuard-server hemma på en Ubuntu Server-maskin.
+* 📜 **`fyi.md` & `GEMINI.md`:** Projektets långtidsminne, loggbok och färdplan.
