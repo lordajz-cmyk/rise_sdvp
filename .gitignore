@@ -56,3 +56,7 @@ wireguard_admin.sh
 *data.db
 *.db
 data.db
+
+# Memory and log files (local only)
+GEMINI.md
+fyi.md

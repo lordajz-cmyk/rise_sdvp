@@ -20,6 +20,7 @@
 
 #include <QMainWindow>
 #include <QtWidgets>
+#include <QItemSelection>
 #include <QList>
 #include <QTimer>
 #include <tuple>
@@ -143,6 +144,9 @@ private slots:
     void onMapCarBoxChanged(int value);
     void setJoystickControlEnabled(bool enabled);
     void loadControllerSettingsFromDatabase();
+    void onMachinesTableClicked(const QModelIndex &index);
+    void onMachinesTableDoubleClicked(const QModelIndex &index);
+    void onMachinesSelectionChanged(const QItemSelection &selected, const QItemSelection &deselected);
     void saveControllerSettingsToDatabase();
     void handleControllerInput(int controllerNumber, float value);
 
