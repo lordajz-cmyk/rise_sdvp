@@ -51,3 +51,8 @@ web/
 
 # Exclude admin-only tools from repository
 wireguard_admin.sh
+
+# Exclude sensitive databases containing passwords
+*data.db
+*.db
+data.db
