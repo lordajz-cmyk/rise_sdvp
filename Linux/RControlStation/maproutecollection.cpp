@@ -7,13 +7,22 @@ MapRouteCollection::MapRouteCollection()
 
 MapRoute& MapRouteCollection::getRoute(int ind)
 {
+    static MapRoute emptyRoute;
+    if (mCollection.isEmpty()) {
+        return emptyRoute;
+    }
+
     if (ind < 0) {
-        return mCollection[mRouteNow];
+        if (mRouteNow >= 0 && mRouteNow < mCollection.size()) {
+            return mCollection[mRouteNow];
+        } else {
+            return emptyRoute;
+        }
     } else {
         if (mCollection.size() > ind) {
             return mCollection[ind];
         } else {
-            Q_ASSERT_X(true, "MapRouteCollection::getRoute", "Incorrect input");
+            return emptyRoute;
         }
     }
 }
