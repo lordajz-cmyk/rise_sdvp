@@ -49,6 +49,12 @@ Linux/RControlStation/Models/*.model
 web/
 !web/server.py
 
+# Memory and log files (local only)
+GEMINI.md
+fyi.md
+*data.db
+*.db
+
 # Exclude admin-only tools from repository
 wireguard_admin.sh
 
