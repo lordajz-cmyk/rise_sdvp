@@ -1,4 +1,4 @@
-# 🛰️ RISE SDVP - Optimerat & Helautomatiserat Styrsystem (lordajz-cmyk branch)
+# 🛰️ RISE SDVP - Optimerat & Helautomatiserat Styrsystem (lordajz-cmyk & gemini branch) 
 
 Välkommen till den optimerade och helautomatiska releasen av **RISE SDVP** styrsystemet för autonoma fordon och jordbruksrobotar. Denna version är helt fristående, åtgärdar kritiska mjukvarubuggar och introducerar ett kraftfullt installationsramverk som gör driftsättning av nya maskiner till en lek.
 
