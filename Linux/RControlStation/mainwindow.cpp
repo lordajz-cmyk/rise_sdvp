@@ -293,6 +293,8 @@ MainWindow::MainWindow(QWidget *parent) :
     mSupportedFirmwares.append(qMakePair(20, 1));
     mSupportedFirmwares.append(qMakePair(30, 1));
 
+    ui->mapStreamNmeaFollowBox->setChecked(true);
+
     qRegisterMetaType<LocPoint>("LocPoint");
     mTimer = new QTimer(this);
     mTimer->start(ui->pollIntervalBox->value());
