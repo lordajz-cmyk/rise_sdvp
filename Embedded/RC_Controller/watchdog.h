@@ -24,8 +24,8 @@ extern event_source_t heartbeat_event;
 extern event_source_t heartbeat_lost;
 
 // Declare event sources
-CH_EVENT_SOURCE_DECL(heartbeat_event);
-CH_EVENT_SOURCE_DECL(heartbeat_lost);
+// CH_EVENT_SOURCE_DECL(heartbeat_event);
+// CH_EVENT_SOURCE_DECL(heartbeat_lost);
 
 
 #endif /* WATCHDOG_H_ */

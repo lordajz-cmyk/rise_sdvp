@@ -43,6 +43,7 @@
 
 #include "bldc_interface.h"
 #include "buffer.h"
+#include "commands.h"
 #include <string.h>
 
 // Private variables

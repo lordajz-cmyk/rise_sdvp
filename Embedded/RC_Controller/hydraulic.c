@@ -29,6 +29,7 @@
 #endif
 
 #include "pos.h"
+#include "commands.h"
 
 //thread_t *hydro_thread = NULL;
 

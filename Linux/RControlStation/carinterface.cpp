@@ -100,7 +100,10 @@ CarInterface::~CarInterface()
 
 void CarInterface::setID(int id)
 {
+    mId = id;
+    ui->idBox->blockSignals(true);
     ui->idBox->setValue(id);
+    ui->idBox->blockSignals(false);
 }
 
 int CarInterface::getId()

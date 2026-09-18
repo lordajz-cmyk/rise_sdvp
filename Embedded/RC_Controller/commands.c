@@ -22,6 +22,7 @@
 #include "pos.h"
 #include "buffer.h"
 #include "terminal.h"
+#include "bldc_interface.h"
 #include "motor_control.h"
 #include "servo_simple.h"
 #include "utils.h"
@@ -251,7 +252,7 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 	// - Our main_id
 	// - ID_ALL (broadcast to all devices)
 	// - ID_VEHICLE_CLIENT (vehicle client)
-	if (id == main_id || id == ID_ALL || id == ID_VEHICLE_CLIENT) {
+	if (id == main_id || id == 0 || id == ID_ALL || id == ID_VEHICLE_CLIENT) {
 		int id_ret = main_id; // Default response ID is our main_id
 
 		// If packet was addressed to ID_VEHICLE_CLIENT, respond with that ID

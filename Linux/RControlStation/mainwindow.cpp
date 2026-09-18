@@ -2145,7 +2145,7 @@ void MainWindow::stateReceived(quint8 id, CAR_STATE state)
     } else {
         for(QList<CarInterface*>::Iterator it_car = mCars.begin();it_car < mCars.end();it_car++) {
             CarInterface *car = *it_car;
-            if (car->getId() == id) {
+            if (car->getId() == id || car->getId() == 0) {
                 car->setStateData(state);
             }
         }
@@ -4958,7 +4958,24 @@ void MainWindow::on_tcpConnectButton_clicked()
             mTcpClientMulti->addConnection(ipPort.at(0),
                                            ipPort.at(1).toInt());
         }
-        addCar(mCars.size(),ipPort.at(0));
+        
+        // Lookup correct machine ID from machinesModel based on IP address
+        int car_id = mCars.size();
+        for (int row = 0; row < machinesModel->rowCount(); ++row) {
+            QStandardItem* ipItem = machinesModel->item(row, 1);
+            if (ipItem && ipItem->text() == ipPort.at(0)) {
+                QStandardItem* nameItem = machinesModel->item(row, 0);
+                if (nameItem) {
+                    bool ok;
+                    int id_val = nameItem->data(Qt::UserRole).toInt(&ok);
+                    if (ok) {
+                        car_id = id_val;
+                        break;
+                    }
+                }
+            }
+        }
+        addCar(car_id, ipPort.at(0));
     }
 }
 
@@ -6740,17 +6757,21 @@ void MainWindow::on_mapImportNmeaButton_clicked()
                         fix_t = "Single";
                         p.setColor(Qt::red);
                     }
+                    int rtk_sats = 0;
+                    if (gga.fix_type == 4 || gga.fix_type == 5) {
+                        rtk_sats = gga.n_sat;
+                    }
 #if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
-                    info = QString("Fix type: %s\n Sats    : %d\n Height  : %.2f")
-                               .arg(fix_t.toLocal8Bit().data())
+                    info = QString("Fix type: %1\n Sats    : %2 (RTK: %3)\n Height  : %4")
+                               .arg(fix_t)
                                .arg(gga.n_sat)
-                               .arg(gga.height);
+                               .arg(rtk_sats)
+                               .arg(gga.height, 0, 'f', 2);
 #else
-                    info.sprintf("Fix type: %s\n") 
-                                 "Sats    : %d\n") 
-                                 "Height  : %.2f",
+                    info.sprintf("Fix type: %s\nSats    : %d (RTK: %d)\nHeight  : %.2f",
                                  fix_t.toLocal8Bit().data(),
                                  gga.n_sat,
+                                 rtk_sats,
                                  gga.height);
 #endif
                     p.setInfo(info);

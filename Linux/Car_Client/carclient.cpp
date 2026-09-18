@@ -551,9 +551,15 @@ void CarClient::restartRtklib()
 
     QProcess process3;
     process3.setEnvironment(QProcess::systemEnvironment());
+    // Detect whether project is cloned inside RControllStation and fallback to standard path
+    QString rtkPath = QString("/home/%1/RControllStation/rise_sdvp/Linux/PI/rtkrcv_arm").arg(user);
+    QDir rtkDir(rtkPath);
+    if (!rtkDir.exists()) {
+        rtkPath = QString("/home/%1/rise_sdvp/Linux/RTK/rtkrcv_arm").arg(user);
+    }
     process3.start("screen", QStringList() <<
                    "-d" << "-m" << "-S" << "rtklib" << "bash" << "-c" <<
-                   QString("cd /home/%1/rise_sdvp/Linux/RTK/rtkrcv_arm && ./start_ublox ; bash").arg(user));
+                   QString("cd %1 && ./start_ublox ; bash").arg(rtkPath));
     waitProcess(process3);
 }
 
@@ -867,8 +873,7 @@ void CarClient::packetDataToSend(QByteArray &data)
     (void)id;
     qDebug() << "in CarClient::packetDataToSend.... Id: " << id << ", mCarId: " << mCarId << ", cmd: " << cmd;
 
-//    if (id == mCarId || id == 255) {
-    if (id == mCarId || mCarId == 255) {
+    if (id == mCarId || id == 0 || id == 255 || mCarId == 255) {
         if (cmd == CMD_CAMERA_STREAM_START) {
         } else if (cmd == CMD_TERMINAL_CMD) {
             QString str(vb);
@@ -1104,8 +1109,8 @@ void CarClient::ubxRx(const QByteArray &data)
 
 void CarClient::rxRawx(ubx_rxm_rawx rawx)
 {
-    if (!rawx.leap_sec) {
-        // Leap seconds are not known...
+    if (!rawx.leap_sec || rawx.week < 2000) {
+        // Leap seconds or week number are not known yet...
         return;
     }
 

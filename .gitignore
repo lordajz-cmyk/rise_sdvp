@@ -48,3 +48,6 @@ Linux/RControlStation/Models/*.model
 **/*.gblweb/
 web/
 !web/server.py
+
+# Exclude admin-only tools from repository
+wireguard_admin.sh

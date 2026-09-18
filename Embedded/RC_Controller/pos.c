@@ -33,6 +33,7 @@
 //#include "mr_control.h"
 #include "srf10.h"
 #include "terminal.h"
+#include "comm_usb.h"
 #include "pos_uwb.h"
 #include "comm_can.h"
 #include "hydraulic.h"

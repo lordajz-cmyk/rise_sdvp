@@ -32,6 +32,7 @@ void ublox_set_rx_callback_nav_sat(void(*func)(ubx_nav_sat *sat));
 void ublox_set_rx_callback_cfg_gnss(void(*func)(ubx_cfg_gnss *gnss));
 void ublox_poll(uint8_t msg_class, uint8_t id);
 int ublox_cfg_prt_uart(ubx_cfg_prt_uart *cfg);
+int ublox_cfg_prt_uart2(ubx_cfg_prt_uart *cfg);
 int ublox_cfg_tmode3(ubx_cfg_tmode3 *cfg);
 int ublox_cfg_msg(uint8_t msg_class, uint8_t id, uint8_t rate);
 int ublox_cfg_rate(uint16_t meas_rate_ms, uint16_t nav_rate_ms, uint16_t time_ref);

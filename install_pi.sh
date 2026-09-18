@@ -202,7 +202,7 @@ START_SCRIPT="$REAL_HOME/start_car.sh"
 cat <<EOF > "$START_SCRIPT"
 #!/bin/bash
 # Startar Car_Client i en bakgrunds-screen
-screen -S car -d -m bash -c "cd '$CLIENT_DIR' && ./Car_Client -p /dev/vehicle --useudp --logusb --usetcp; bash"
+screen -S car -d -m bash -c "cd '$CLIENT_DIR' && ./Car_Client -p /dev/vehicle --useudp --logusb --usetcp --tcprtcmserver 8200 --tcpubxserver 8210; bash"
 echo "Car_Client startades i en screen-session med namnet 'car'."
 echo "För att ansluta live, kör: screen -r car"
 EOF
