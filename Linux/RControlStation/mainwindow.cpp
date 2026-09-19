@@ -5014,8 +5014,10 @@ void MainWindow::on_tcpConnectButton_clicked()
                 }
             }
         }
-        addCar(car_id, ipPort.at(0));
+        addCar(car_id, ipPort.at(0), true); // Automatically enable "Poll data" on connection!
         ui->mapCarBox->setValue(car_id); // Automatically select and highlight the connected car on the map!
+        ui->mapFollowBox->setChecked(true); // Automatically follow the connected car on the map!
+        ui->mapStreamNmeaFollowBox->setChecked(false); // Mutually exclusive, follow the car instead of NMEA stream!
     }
 }
 

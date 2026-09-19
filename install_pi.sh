@@ -124,13 +124,46 @@ fi
 # 📡 STEG 3: Konfigurera Swepos RTK-tjänst (str2str)
 # ------------------------------------------------------------------------------
 echo -e "${YELLOW}${BOLD}[Steg 3/5] Konfigurerar Swepos RTK-korrektioner...${NC}"
-echo -e "Ange dina Swepos-uppgifter för att starta bakgrunds-RTK-strömmen."
 
-read -p "Mata in ditt Swepos-användarnamn: " SWEPOS_USER
-read -s -p "Mata in ditt Swepos-lösenord: " SWEPOS_PASS
-echo ""
-read -p "Mata in din basstations Latitud (t.ex. 57.708875): " SWEPOS_LAT
-read -p "Mata in din basstations Longitud (t.ex. 11.974560): " SWEPOS_LON
+# Sök efter existerande Swepos-konfiguration för smarta standardval
+DEFAULT_USER=""
+DEFAULT_PASS=""
+DEFAULT_LAT="60.063221"
+DEFAULT_LON="18.078982"
+
+if [ -f "/etc/systemd/system/car_rtk.service" ]; then
+  EXISTING_EXEC=$(grep "ExecStart" /etc/systemd/system/car_rtk.service)
+  # Extrahera användarnamn och lösenord
+  if [[ $EXISTING_EXEC =~ ntrip://([^:]+):([^@]+)@ ]]; then
+    DEFAULT_USER="${BASH_REMATCH[1]}"
+    DEFAULT_PASS="${BASH_REMATCH[2]}"
+  fi
+  # Extrahera latitud och longitud
+  if [[ $EXISTING_EXEC =~ -p[[:space:]]+([0-9.-]+)[[:space:]]+([0-9.-]+) ]]; then
+    DEFAULT_LAT="${BASH_REMATCH[1]}"
+    DEFAULT_LON="${BASH_REMATCH[2]}"
+  fi
+fi
+
+if [ -n "$DEFAULT_USER" ]; then
+  echo -e "${GREEN}Hittade existerande Swepos-inställningar! Tryck Enter för att behålla dem.${NC}"
+  read -p "Mata in ditt Swepos-användarnamn [$DEFAULT_USER]: " SWEPOS_USER
+  SWEPOS_USER=${SWEPOS_USER:-$DEFAULT_USER}
+
+  read -s -p "Mata in ditt Swepos-lösenord [använd sparad]: " SWEPOS_PASS
+  echo ""
+  SWEPOS_PASS=${SWEPOS_PASS:-$DEFAULT_PASS}
+else
+  read -p "Mata in ditt Swepos-användarnamn: " SWEPOS_USER
+  read -s -p "Mata in ditt Swepos-lösenord: " SWEPOS_PASS
+  echo ""
+fi
+
+read -p "Mata in din basstations Latitud [$DEFAULT_LAT]: " SWEPOS_LAT
+SWEPOS_LAT=${SWEPOS_LAT:-$DEFAULT_LAT}
+
+read -p "Mata in din basstations Longitud [$DEFAULT_LON]: " SWEPOS_LON
+SWEPOS_LON=${SWEPOS_LON:-$DEFAULT_LON}
 
 SERVICE_FILE="/etc/systemd/system/car_rtk.service"
 cat <<EOF > "$SERVICE_FILE"
@@ -201,8 +234,11 @@ echo -e "${YELLOW}${BOLD}[Steg 5/5] Konfigurerar automatisk uppstart vid boot...
 START_SCRIPT="$REAL_HOME/start_car.sh"
 cat <<EOF > "$START_SCRIPT"
 #!/bin/bash
+# Ge USB-portarna, modemet och VPN-tunneln 10 sekunder att vakna efter boot
+sleep 10
+
 # Startar Car_Client i en bakgrunds-screen
-screen -S car -d -m bash -c "cd '$CLIENT_DIR' && ./Car_Client -p /dev/vehicle --useudp --logusb --usetcp --tcprtcmserver 8200 --tcpubxserver 8210; bash"
+screen -S car -d -m bash -c "cd '$CLIENT_DIR' && ./Car_Client -p /dev/vehicle --useudp --logusb --usetcp --tcprtcmserver 8200 --tcpubxserver 8210 --setid 4; bash"
 echo "Car_Client startades i en screen-session med namnet 'car'."
 echo "För att ansluta live, kör: screen -r car"
 EOF

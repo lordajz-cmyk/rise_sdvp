@@ -60,3 +60,6 @@ data.db
 # Memory and log files (local only)
 GEMINI.md
 fyi.md
+
+# Diagnostic reference guide (local only)
+RTKpos.md
