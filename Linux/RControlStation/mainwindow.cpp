@@ -293,6 +293,8 @@ MainWindow::MainWindow(QWidget *parent) :
     mSupportedFirmwares.append(qMakePair(20, 1));
     mSupportedFirmwares.append(qMakePair(30, 1));
 
+    ui->mapStreamNmeaFollowBox->setChecked(true);
+
     qRegisterMetaType<LocPoint>("LocPoint");
     mTimer = new QTimer(this);
     mTimer->start(ui->pollIntervalBox->value());
@@ -470,7 +472,31 @@ MainWindow::MainWindow(QWidget *parent) :
     ui->tableViewMachines->setModel(machinesModel);
     ui->tableViewMachines->setSelectionBehavior(QAbstractItemView::SelectRows);
     ui->tableViewMachines->setSelectionMode(QAbstractItemView::SingleSelection);
+    ui->tableViewMachines->setEditTriggers(QAbstractItemView::NoEditTriggers);
     ui->tableViewMachines->installEventFilter(this);
+    connect(ui->tableViewMachines, &QTableView::clicked, this, &MainWindow::onMachinesTableClicked);
+    connect(ui->tableViewMachines, &QTableView::doubleClicked, this, &MainWindow::onMachinesTableDoubleClicked);
+    connect(ui->tableViewMachines->selectionModel(), &QItemSelectionModel::selectionChanged, this, &MainWindow::onMachinesSelectionChanged);
+
+    // Configure and connect the sidebar machinesTable (QTableWidget)
+    ui->machinesTable->setSelectionBehavior(QAbstractItemView::SelectRows);
+    ui->machinesTable->setSelectionMode(QAbstractItemView::SingleSelection);
+    ui->machinesTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    connect(ui->machinesTable, &QTableWidget::clicked, this, &MainWindow::onMachinesTableClicked);
+    connect(ui->machinesTable, &QTableWidget::doubleClicked, this, &MainWindow::onMachinesTableDoubleClicked);
+    connect(ui->machinesTable->selectionModel(), &QItemSelectionModel::selectionChanged, this, &MainWindow::onMachinesSelectionChanged);
+
+    // Make Follow Car and Follow NMEA GPS mutually exclusive to prevent map view conflicts
+    connect(ui->mapFollowBox, &QCheckBox::clicked, this, [this](bool checked) {
+        if (checked) {
+            ui->mapStreamNmeaFollowBox->setChecked(false);
+        }
+    });
+    connect(ui->mapStreamNmeaFollowBox, &QCheckBox::clicked, this, [this](bool checked) {
+        if (checked) {
+            ui->mapFollowBox->setChecked(false);
+        }
+    });
 
     // Setup model for vehicle types
     vehicleTypesModel = new QStandardItemModel(this);
@@ -2523,23 +2549,7 @@ MainWindow::
 
 void MainWindow::on_connectSelectedButton_clicked()
 {
-    // Use the same logic as tcpConnectButton: read from tcpConnEdit
-    mTcpClientMulti->disconnectAll();
-
-    QStringList conns = ui->tcpConnEdit->toPlainText().split("\n");
-
-    for (QString c: conns) {
-        QStringList ipPort = c.split(":");
-
-        if (ipPort.size() == 1) {
-            mTcpClientMulti->addConnection(ipPort.at(0),
-                                           8300);
-        } else if (ipPort.size() == 2) {
-            mTcpClientMulti->addConnection(ipPort.at(0),
-                                           ipPort.at(1).toInt());
-        }
-        addCar(mCars.size(), ipPort.at(0));
-    }
+    on_tcpConnectButton_clicked();
 }
 
 void MainWindow::on_disconnectSelectedButton_clicked()
@@ -4945,8 +4955,37 @@ void MainWindow::on_MapRemovePixmapsButton_clicked()
 void MainWindow::on_tcpConnectButton_clicked()
 {
     mTcpClientMulti->disconnectAll();
+    removeCars();
+    ui->carsWidget->clear();
 
-    QStringList conns = ui->tcpConnEdit->toPlainText().split("\n");
+    QString connectIpText = ui->tcpConnEdit->toPlainText().trimmed();
+
+    // Prioritize selected machine in the sidebar machinesTable or machines tab table view
+    QModelIndexList selectedRows = ui->machinesTable->selectionModel()->selectedRows();
+    if (selectedRows.isEmpty()) {
+        selectedRows = ui->tableViewMachines->selectionModel()->selectedRows();
+    }
+    
+    if (!selectedRows.isEmpty()) {
+        int row = selectedRows.first().row();
+        QString selectedIp;
+        
+        // Find which table is selected and get the IP
+        if (ui->machinesTable->selectionModel()->hasSelection()) {
+            QTableWidgetItem* ipItem = ui->machinesTable->item(row, 1);
+            if (ipItem) selectedIp = ipItem->text().trimmed();
+        } else {
+            QStandardItem* ipItem = machinesModel->item(row, 1);
+            if (ipItem) selectedIp = ipItem->text().trimmed();
+        }
+        
+        if (!selectedIp.isEmpty() && selectedIp != "None" && selectedIp != "Loading..." && selectedIp != "XML Error" && selectedIp != "No machines") {
+            connectIpText = selectedIp;
+            ui->tcpConnEdit->setPlainText(selectedIp); // Sync the edit box
+        }
+    }
+
+    QStringList conns = connectIpText.split("\n");
 
     for (QString c: conns) {
         QStringList ipPort = c.split(":");
@@ -4975,7 +5014,10 @@ void MainWindow::on_tcpConnectButton_clicked()
                 }
             }
         }
-        addCar(car_id, ipPort.at(0));
+        addCar(car_id, ipPort.at(0), true); // Automatically enable "Poll data" on connection!
+        ui->mapCarBox->setValue(car_id); // Automatically select and highlight the connected car on the map!
+        ui->mapFollowBox->setChecked(true); // Automatically follow the connected car on the map!
+        ui->mapStreamNmeaFollowBox->setChecked(false); // Mutually exclusive, follow the car instead of NMEA stream!
     }
 }
 
@@ -6653,6 +6695,99 @@ bool MainWindow::onLoadLogfile()
 
     return true;
 };
+
+void MainWindow::onMachinesTableClicked(const QModelIndex &index)
+{
+    qDebug() << "onMachinesTableClicked triggered! Row:" << index.row() << "Column:" << index.column() << "Valid:" << index.isValid();
+    if (index.isValid()) {
+        int row = index.row();
+        QString ip;
+        QString name;
+        
+        if (sender() == ui->machinesTable) {
+            QTableWidgetItem* ipItem = ui->machinesTable->item(row, 1);
+            QTableWidgetItem* nameItem = ui->machinesTable->item(row, 0);
+            if (ipItem) ip = ipItem->text().trimmed();
+            if (nameItem) name = nameItem->text().trimmed();
+        } else {
+            QStandardItem* ipItem = machinesModel->item(row, 1);
+            QStandardItem* nameItem = machinesModel->item(row, 0);
+            if (ipItem) ip = ipItem->text().trimmed();
+            if (nameItem) name = nameItem->text().trimmed();
+        }
+        
+        qDebug() << "onMachinesTableClicked: Found machine Name:" << name << "IP:" << ip;
+        if (!ip.isEmpty() && ip != "None" && ip != "Loading..." && ip != "XML Error" && ip != "No machines") {
+            ui->tcpConnEdit->setPlainText(ip);
+            qDebug() << "onMachinesTableClicked: Successfully updated Connection Edit to" << ip;
+        } else {
+            qDebug() << "onMachinesTableClicked: IP text is invalid or placeholder:" << ip;
+        }
+    }
+}
+
+void MainWindow::onMachinesTableDoubleClicked(const QModelIndex &index)
+{
+    qDebug() << "onMachinesTableDoubleClicked triggered! Row:" << index.row() << "Column:" << index.column() << "Valid:" << index.isValid();
+    if (index.isValid()) {
+        int row = index.row();
+        QString ip;
+        QString name;
+        
+        if (sender() == ui->machinesTable) {
+            QTableWidgetItem* ipItem = ui->machinesTable->item(row, 1);
+            QTableWidgetItem* nameItem = ui->machinesTable->item(row, 0);
+            if (ipItem) ip = ipItem->text().trimmed();
+            if (nameItem) name = nameItem->text().trimmed();
+        } else {
+            QStandardItem* ipItem = machinesModel->item(row, 1);
+            QStandardItem* nameItem = machinesModel->item(row, 0);
+            if (ipItem) ip = ipItem->text().trimmed();
+            if (nameItem) name = nameItem->text().trimmed();
+        }
+        
+        qDebug() << "onMachinesTableDoubleClicked: Found machine Name:" << name << "IP:" << ip;
+        if (!ip.isEmpty() && ip != "None" && ip != "Loading..." && ip != "XML Error" && ip != "No machines") {
+            ui->tcpConnEdit->setPlainText(ip);
+            qDebug() << "onMachinesTableDoubleClicked: Triggering immediate connection to" << ip;
+            on_tcpConnectButton_clicked();
+        } else {
+            qDebug() << "onMachinesTableDoubleClicked: IP text is invalid or placeholder:" << ip;
+        }
+    }
+}
+
+void MainWindow::onMachinesSelectionChanged(const QItemSelection &selected, const QItemSelection &deselected)
+{
+    Q_UNUSED(deselected);
+    QModelIndexList indexes = selected.indexes();
+    qDebug() << "onMachinesSelectionChanged triggered! Selected indexes count:" << indexes.size();
+    if (!indexes.isEmpty()) {
+        int row = indexes.first().row();
+        QString ip;
+        QString name;
+        
+        if (sender() == ui->machinesTable->selectionModel()) {
+            QTableWidgetItem* ipItem = ui->machinesTable->item(row, 1);
+            QTableWidgetItem* nameItem = ui->machinesTable->item(row, 0);
+            if (ipItem) ip = ipItem->text().trimmed();
+            if (nameItem) name = nameItem->text().trimmed();
+        } else {
+            QStandardItem* ipItem = machinesModel->item(row, 1);
+            QStandardItem* nameItem = machinesModel->item(row, 0);
+            if (ipItem) ip = ipItem->text().trimmed();
+            if (nameItem) name = nameItem->text().trimmed();
+        }
+        
+        qDebug() << "onMachinesSelectionChanged: Found machine Name:" << name << "IP:" << ip;
+        if (!ip.isEmpty() && ip != "None" && ip != "Loading..." && ip != "XML Error" && ip != "No machines") {
+            ui->tcpConnEdit->setPlainText(ip);
+            qDebug() << "onMachinesSelectionChanged: Selection changed, updated Connection Edit to" << ip;
+        } else {
+            qDebug() << "onMachinesSelectionChanged: IP text is invalid or placeholder:" << ip;
+        }
+    }
+}
 
 
 void MainWindow::on_listLogFilesView_clicked(const QModelIndex& index) {

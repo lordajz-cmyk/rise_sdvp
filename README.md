@@ -4,7 +4,7 @@ Välkommen till den optimerade och helautomatiska releasen av **RISE SDVP** styr
 
 ---
 
-## 🚀 Kritiska Förbättringar i denna Release (Bugfixes)
+## 🚀 Förbättringar i denna Release (Bugfixes)
 
 De manuella handpåläggningarna och instabiliteten från originalkoden är nu ett minne blott. Följande kritiska förbättringar har implementerats:
 

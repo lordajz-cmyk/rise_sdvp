@@ -2896,9 +2896,8 @@ void MapWidget::updateTraces()
     {
         // Store trace for the selected car
         if (mTraceCar >= 0) {
-            CarInfo &carInfo = mCarInfo[0];
             for (int i = 0;i < mCarInfo.size();i++) {
-                carInfo = mCarInfo[i];
+                CarInfo &carInfo = mCarInfo[i];
                 if (carInfo.getId() == mTraceCar) {
                     if (mCarTrace.isEmpty()) {
                         mCarTrace.append(carInfo.getLocation());
