@@ -62,3 +62,6 @@ wireguard_admin.sh
 *data.db
 *.db
 data.db
+
+# Diagnostic reference guide (local only)
+RTKpos.md
