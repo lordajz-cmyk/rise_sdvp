@@ -929,7 +929,7 @@ void MainWindow::updateFarms()
 void MainWindow::populateControllerComboBoxes()
 {
     // Query to get all actions from database
-    QSqlQuery query("SELECT id, name FROM actions", db.getDb());
+    QSqlQuery query("SELECT id, name FROM controls", db.getDb());
     
     if (!query.exec()) {
         qDebug() << "Query error:" << query.lastError().text();
@@ -1018,7 +1018,7 @@ QList<QPair<int, QString>> MainWindow::getActionsFromDatabase()
     QList<QPair<int, QString>> actions;
 
     // Query to get all actions from database
-    QSqlQuery query("SELECT id, name FROM actions", db.getDb());
+    QSqlQuery query("SELECT id, name FROM controls", db.getDb());
 
     if (!query.exec()) {
         qDebug() << "Actions query error:" << query.lastError().text();
@@ -1041,7 +1041,7 @@ QList<std::tuple<int, QString, QString>> MainWindow::getActionsWithColoursFromDa
     QList<std::tuple<int, QString, QString>> actions;
 
     // Query to get all actions with their colours from database
-    QSqlQuery query("SELECT id, name, colour FROM actions", db.getDb());
+    QSqlQuery query("SELECT id, name, colour FROM controls", db.getDb());
 
     if (!query.exec()) {
         qDebug() << "Actions with colours query error:" << query.lastError().text();
