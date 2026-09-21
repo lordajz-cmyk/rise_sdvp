@@ -90,9 +90,9 @@ echo -e "\n${BOLD}Startar flashning via OpenOCD...${NC}"
 
 # 
 if [ "$EUID" -ne 0 ]; then
-  sudo openocd -f board/stm32f4discovery.cfg -c "reset_config trst_only combined" -c "program $FW_DIR/precompiled/fw_${FW_NAME}.bin verify reset exit 0x08000000"
+  sudo openocd -f board/stm32f4discovery.cfg -c "reset_config trst_only combined" -c "program $FW_DIR/build/fw_${FW_NAME}.bin verify reset exit 0x08000000"
 else
-  openocd -f board/stm32f4discovery.cfg -c "reset_config trst_only combined" -c "program $FW_DIR/precompiled/fw_${FW_NAME}.bin verify reset exit 0x08000000"
+  openocd -f board/stm32f4discovery.cfg -c "reset_config trst_only combined" -c "program $FW_DIR/build/fw_${FW_NAME}.bin verify reset exit 0x08000000"
 fi
 
 if [ $? -eq 0 ]; then

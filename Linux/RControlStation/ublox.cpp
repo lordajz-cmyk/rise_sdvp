@@ -824,15 +824,18 @@ void Ublox::serialDataAvailable()
                     mDecoderState.ubx_pos++;
                 } else if (mDecoderState.ubx_pos == 5) {
                     mDecoderState.ubx_len |= ch << 8;
-                    if (mDecoderState.ubx_len >= sizeof(mDecoderState.ubx)) {
+                    if (mDecoderState.ubx_len >= (int)sizeof(mDecoderState.ubx)) {
                         qDebug() << "Too large UBX packet" << mDecoderState.ubx_len;
+                        mDecoderState.ubx_pos = 0;
                     } else {
                         mDecoderState.ubx_ck_a += ch;
                         mDecoderState.ubx_ck_b += mDecoderState.ubx_ck_a;
                         mDecoderState.ubx_pos++;
                     }
                 } else if ((mDecoderState.ubx_pos - 6) < mDecoderState.ubx_len) {
-                    mDecoderState.ubx[mDecoderState.ubx_pos - 6] = ch;
+                    if ((mDecoderState.ubx_pos - 6) < (int)sizeof(mDecoderState.ubx)) {
+                        mDecoderState.ubx[mDecoderState.ubx_pos - 6] = ch;
+                    }
                     mDecoderState.ubx_ck_a += ch;
                     mDecoderState.ubx_ck_b += mDecoderState.ubx_ck_a;
                     mDecoderState.ubx_pos++;
@@ -1204,7 +1207,8 @@ void Ublox::ubx_decode_rawx(uint8_t *msg, int len)
 
     ind = 16;
 
-    for (int i = 0;i < raw.num_meas;i++) {
+    int num_meas_safe = raw.num_meas > 128 ? 128 : raw.num_meas;
+    for (int i = 0;i < num_meas_safe;i++) {
         raw.obs[i].pr_mes = ubx_get_R8(msg, &ind);
         raw.obs[i].cp_mes = ubx_get_R8(msg, &ind);
         raw.obs[i].do_mes = ubx_get_R4(msg, &ind);

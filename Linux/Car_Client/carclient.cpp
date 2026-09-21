@@ -970,7 +970,7 @@ void CarClient::tcpDisconnected()
 
 void CarClient::rtcmUsbRx(quint8 id, QByteArray data)
 {
-    mCarId = id;
+    (void)id;
     mRtcmBroadcaster->broadcastData(data);
 }
 
@@ -1046,7 +1046,9 @@ void CarClient::carPacketRx(quint8 id, CMD_PACKET cmd, const QByteArray &data)
 */
     if (id != 254) {
 //        qDebug() << "In CarClient::carPacketRx. Car: " << id;
-        mCarId = id;
+        if (mCarId == 255) {
+            mCarId = id;
+        }
 
         if (QString::compare(mHostAddress.toString(), "0.0.0.0") != 0) {
 //            qDebug() << "datagramming";

@@ -234,8 +234,8 @@ echo -e "${YELLOW}${BOLD}[Steg 5/5] Konfigurerar automatisk uppstart vid boot...
 START_SCRIPT="$REAL_HOME/start_car.sh"
 cat <<EOF > "$START_SCRIPT"
 #!/bin/bash
-# Ge USB-portarna, modemet och VPN-tunneln 10 sekunder att vakna efter boot
-sleep 10
+# Ge USB-portarna, modemet och VPN-tunneln 90 sekunder att vakna efter boot
+sleep 90
 
 # Startar Car_Client i en bakgrunds-screen
 screen -S car -d -m bash -c "cd '$CLIENT_DIR' && ./Car_Client -p /dev/vehicle --useudp --logusb --usetcp --tcprtcmserver 8200 --tcpubxserver 8210 --setid 4; bash"

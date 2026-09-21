@@ -150,8 +150,9 @@ QSqlError database::initDb()
     // 1. First try current directory (for development)
     dbPaths << "data.db";
     
-    // 2. Try AppImage data directory
+    // 2. Try AppImage data directory or local application directory
     QString appImagePath = QCoreApplication::applicationDirPath();
+    dbPaths << appImagePath + "/data.db";
     dbPaths << appImagePath + "/../share/RControlStation/data.db";
     dbPaths << appImagePath + "/../../share/RControlStation/data.db";
     dbPaths << "/usr/share/RControlStation/data.db";
@@ -219,29 +220,27 @@ void database::ensureControllersTableExists()
 {
     QSqlQuery query(db);
     
-    // Check if controls table exists
-    if (!query.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='controls'")) {
-        qDebug() << "Error checking for controls table:" << query.lastError().text();
+    // Check if controllers table exists
+    if (!query.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='controllers'")) {
+        qDebug() << "Error checking for controllers table:" << query.lastError().text();
         return;
     }
     
     // If table doesn't exist, create it
     if (!query.next()) {
         QString createTableSql = 
-            "CREATE TABLE controls (" 
+            "CREATE TABLE controllers (" 
             "    id INTEGER PRIMARY KEY AUTOINCREMENT," 
-            "    name TEXT NOT NULL UNIQUE" 
+            "    name TEXT," 
+            "    action INTEGER" 
             ");";
         
         if (!query.exec(createTableSql)) {
-            qDebug() << "Error creating controls table:" << query.lastError().text();
+            qDebug() << "Error creating controllers table:" << query.lastError().text();
             return;
         }
         
-        qDebug() << "Controls table created successfully.";
-        
-        // Add some default controls
-        addController("Front Lift");
+        qDebug() << "Controllers table created successfully.";
     }
 }
 
@@ -323,6 +322,18 @@ void database::ensureControlsTableExists()
             }
             if (!existingColumns.contains("logical_operation")) {
                 query.exec("ALTER TABLE controls ADD COLUMN logical_operation TEXT DEFAULT 'AND'");
+            }
+        }
+        
+        // Self-healing database check: If controls table is empty or contains only 1 row (remnants of the old buggy Front Lift schema conflict),
+        // reset the table and insert the full set of default controls!
+        QSqlQuery checkQuery("SELECT COUNT(*) FROM controls", db);
+        if (checkQuery.exec() && checkQuery.next()) {
+            int count = checkQuery.value(0).toInt();
+            if (count <= 1) {
+                qDebug() << "Stunted controls table detected (count" << count << "). Restoring full default control system...";
+                query.exec("DELETE FROM controls");
+                insertDefaultControls();
             }
         }
     }

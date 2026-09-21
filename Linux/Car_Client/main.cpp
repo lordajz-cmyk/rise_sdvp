@@ -494,6 +494,9 @@ int main(int argc, char *argv[])
 #endif
 
     car.setCarIdToSet(carId);
+    if (carId != -1) {
+        car.setCarId(carId); // Initialize mCarId to the specified ID on startup to avoid auto-detecting ID 0 from the board's default boot ID before setid is processed!
+    }
     qDebug() << "TTY port:" << ttyPort;
 
     if (!ttyPort.isEmpty()) {

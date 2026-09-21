@@ -1221,6 +1221,35 @@ void MainWindow::saveControllerSettingsToDatabase()
     }
 }
 
+static QString getControllerAsciiBar(float value, bool is_axis) {
+    int width = 10;
+    if (is_axis) {
+        // Range -1.0 to 1.0
+        int pos = (int)((value + 1.0f) / 2.0f * width);
+        if (pos < 0) pos = 0;
+        if (pos >= width) pos = width - 1;
+        QString bar = "[";
+        for (int i = 0; i < width; i++) {
+            if (i == pos) bar += "O";
+            else bar += "-";
+        }
+        bar += "]";
+        return bar;
+    } else {
+        // Range 0.0 to 1.0
+        int pos = (int)(value * width);
+        if (pos < 0) pos = 0;
+        if (pos > width) pos = width;
+        QString bar = "[";
+        for (int i = 0; i < width; i++) {
+            if (i < pos) bar += "#";
+            else bar += " ";
+        }
+        bar += "]";
+        return bar;
+    }
+}
+
 void MainWindow::handleControllerInput(int controllerNumber, float value)
 {
     // Validate controller number (1-8)
@@ -1229,6 +1258,28 @@ void MainWindow::handleControllerInput(int controllerNumber, float value)
         return;
     }
     qDebug() << "Controller idr:" << controllerNumber;
+
+    // Update the label text with dynamic ASCII feedback bar in real-time
+    switch (controllerNumber) {
+        case 1:
+            ui->label_9->setText(QString("Left flip %1").arg(getControllerAsciiBar(value, false)));
+            break;
+        case 3:
+            ui->label_10->setText(QString("Right flip %1").arg(getControllerAsciiBar(value, false)));
+            break;
+        case 5:
+            ui->label_4->setText(QString("Left control stick - up/down %1").arg(getControllerAsciiBar(value, true)));
+            break;
+        case 6:
+            ui->label_5->setText(QString("Left control stick - right/left %1").arg(getControllerAsciiBar(value, true)));
+            break;
+        case 7:
+            ui->label_7->setText(QString("Right control stick - up/down %1").arg(getControllerAsciiBar(value, true)));
+            break;
+        case 8:
+            ui->label_8->setText(QString("Right control stick - right/left %1").arg(getControllerAsciiBar(value, true)));
+            break;
+    }
 
     // Get the action ID for this controller from the database
     QSqlQuery query(db.getDb());
@@ -2295,10 +2346,10 @@ void MainWindow::nmeaGgaRx(int fields, NmeaServer::nmea_gga_info_t gga)
                       .arg(gga.height,0,'f',2)
                       .arg(gga.diff_age,0,'f',2);*/
             QByteArray fixBytes = fix_t.toLocal8Bit();
-            info = QString("Fix type: %1\n") +
-                           QString("Sats    : %2\n") +
-                           QString("Height  : %3\n") +
-                           QString("Age     : %4")
+            info = (QString("Fix type: %1\n") +
+                    QString("Sats    : %2\n") +
+                    QString("Height  : %3\n") +
+                    QString("Age     : %4"))
                        .arg(QString::fromLocal8Bit(fixBytes))
                        .arg(QString::number(gga.n_sat))
                        .arg(gga.height, 0, 'f', 2)
@@ -5016,8 +5067,13 @@ void MainWindow::on_tcpConnectButton_clicked()
         }
         addCar(car_id, ipPort.at(0), true); // Automatically enable "Poll data" on connection!
         ui->mapCarBox->setValue(car_id); // Automatically select and highlight the connected car on the map!
-        ui->mapFollowBox->setChecked(true); // Automatically follow the connected car on the map!
-        ui->mapStreamNmeaFollowBox->setChecked(false); // Mutually exclusive, follow the car instead of NMEA stream!
+        ui->mapFollowBox->setChecked(false); // Do not follow ENU car (which can be uninitialized at 0,0) by default
+        ui->mapStreamNmeaFollowBox->setChecked(false); // Let the user toggle high-precision GPS tracking manually to prevent GUI thread congestion
+        ui->mapStreamNmeaZeroEnuBox->setChecked(true); // Automatically zero/align the ENU reference on the first received RTK coordinate!
+
+        // Let the user connect manually to port 2948 NMEA stream to prevent connection thread locking!
+        ui->mapStreamNmeaServerEdit->setText(ipPort.at(0));
+        ui->mapStreamNmeaPortBox->setValue(2948);
     }
 }
 
@@ -7568,6 +7624,18 @@ void MainWindow::pollGamepad() {
         if (event.type == SDL_CONTROLLERBUTTONDOWN || event.type == SDL_CONTROLLERBUTTONUP) {
             qDebug() << "up or down";
             handleButtonEvent(event.cbutton);
+        } else if (event.type == SDL_JOYBUTTONDOWN || event.type == SDL_JOYBUTTONUP) {
+            qDebug() << "joy button up or down";
+            bool pressed = (event.type == SDL_JOYBUTTONDOWN);
+            ui->statusBar->showMessage(QString("Gamepad: Raw Button %1 %2").arg(event.jbutton.button).arg(pressed ? "PRESSED" : "RELEASED"), 3000);
+            
+            // Map common raw button numbers for L1 (Left Shoulder) and R1 (Right Shoulder) as fallbacks!
+            int btn = event.jbutton.button;
+            if (btn == 4 || btn == 6 || btn == 9) { // L1 candidates
+                handleControllerInput(1, pressed ? 1.0f : 0.0f);
+            } else if (btn == 5 || btn == 7 || btn == 10) { // R1 candidates
+                handleControllerInput(3, pressed ? 1.0f : 0.0f);
+            }
         } else if (event.type == SDL_CONTROLLERAXISMOTION) {
 //            qDebug() << "axis";
             handleAxisEvent(event.caxis);
@@ -7578,15 +7646,38 @@ void MainWindow::pollGamepad() {
 void MainWindow::handleButtonEvent(const SDL_ControllerButtonEvent& event) {
 //    qDebug() << "button id: " << event.button;
     bool pressed = (event.state == SDL_PRESSED);
+    
+    // Show a live message in the status bar so the user knows exactly which button is registered!
+    QString buttonName;
+    switch (event.button) {
+    case SDL_CONTROLLER_BUTTON_A: buttonName = "A / Cross"; break;
+    case SDL_CONTROLLER_BUTTON_B: buttonName = "B / Circle"; break;
+    case SDL_CONTROLLER_BUTTON_X: buttonName = "X / Square"; break;
+    case SDL_CONTROLLER_BUTTON_Y: buttonName = "Y / Triangle"; break;
+    case SDL_CONTROLLER_BUTTON_BACK: buttonName = "Back / Share"; break;
+    case SDL_CONTROLLER_BUTTON_GUIDE: buttonName = "Guide / PS"; break;
+    case SDL_CONTROLLER_BUTTON_START: buttonName = "Start / Options"; break;
+    case SDL_CONTROLLER_BUTTON_LEFTSTICK: buttonName = "Left Stick Click"; break;
+    case SDL_CONTROLLER_BUTTON_RIGHTSTICK: buttonName = "Right Stick Click"; break;
+    case SDL_CONTROLLER_BUTTON_LEFTSHOULDER: buttonName = "L1 (Left Shoulder)"; break;
+    case SDL_CONTROLLER_BUTTON_RIGHTSHOULDER: buttonName = "R1 (Right Shoulder)"; break;
+    case SDL_CONTROLLER_BUTTON_DPAD_UP: buttonName = "D-Pad Up"; break;
+    case SDL_CONTROLLER_BUTTON_DPAD_DOWN: buttonName = "D-Pad Down"; break;
+    case SDL_CONTROLLER_BUTTON_DPAD_LEFT: buttonName = "D-Pad Left"; break;
+    case SDL_CONTROLLER_BUTTON_DPAD_RIGHT: buttonName = "D-Pad Right"; break;
+    default: buttonName = QString("Button %1").arg(event.button); break;
+    }
+    ui->statusBar->showMessage(QString("Gamepad: %1 %2").arg(buttonName).arg(pressed ? "PRESSED" : "RELEASED"), 3000);
+
     switch (event.button) {
     case SDL_CONTROLLER_BUTTON_LEFTSHOULDER:
         qDebug() << "Button L1" << pressed;
-        handleControllerInput(1,1.0);
+        handleControllerInput(1, pressed ? 1.0f : 0.0f);
         //jsButtonChanged(4, pressed);
         break;
     case SDL_CONTROLLER_BUTTON_RIGHTSHOULDER:
         qDebug() << "Button R1" << pressed;
-        handleControllerInput(3,1.0);
+        handleControllerInput(3, pressed ? 1.0f : 0.0f);
         //jsButtonChanged(5, pressed);
         break;
     }
@@ -7608,10 +7699,12 @@ void MainWindow::handleAxisEvent(const SDL_ControllerAxisEvent& event) {
         break;
     case SDL_CONTROLLER_AXIS_TRIGGERLEFT:
         qDebug() << "Button L2:" << event.value;
+        ui->statusBar->showMessage(QString("Gamepad: L2 Trigger %1%").arg((int)((float)event.value / 327.68f)), 1500);
         //jsButtonChanged(6, event.value > 0);
         break;
     case SDL_CONTROLLER_AXIS_TRIGGERRIGHT:
         qDebug() << "Button R2:" << event.value;
+        ui->statusBar->showMessage(QString("Gamepad: R2 Trigger %1%").arg((int)((float)event.value / 327.68f)), 1500);
         //jsButtonChanged(7, event.value > 0);
         break;
     }

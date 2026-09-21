@@ -432,7 +432,8 @@ int NmeaServer::decodeNmeaGGA(QByteArray data, NmeaServer::nmea_gga_info_t &gga)
                 str[i + 2] == 'A' &&
                 str[i + 3] == ',') {
             found = true;
-            strcpy(nmea_str, str + i + 4);
+            strncpy(nmea_str, str + i + 4, sizeof(nmea_str) - 1);
+            nmea_str[sizeof(nmea_str) - 1] = '\0';
             break;
         }
     }
@@ -591,6 +592,7 @@ void NmeaServer::tcpInputDataAvailable()
         nmea_gga_info_t gga;
         int res = decodeNmeaGGA(line.toLocal8Bit(), gga);
         emit clientGgaRx(res, gga);
+        emit clientLineRx(line.toLocal8Bit());
     }
 }
 

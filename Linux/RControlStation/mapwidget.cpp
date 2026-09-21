@@ -480,6 +480,11 @@ void MapWidget::setRoutePointSpeed(double speed)
 
 void MapWidget::addInfoPoint(LocPoint &info, bool updateMap)
 {
+    QList<LocPoint> l;
+    while (mInfoTraces.size() < (mInfoTraceNow + 1)) {
+        mInfoTraces.append(l);
+    }
+
     mInfoTraces[mInfoTraceNow].append(info);
 
     if (updateMap) {
@@ -489,6 +494,11 @@ void MapWidget::addInfoPoint(LocPoint &info, bool updateMap)
 
 void MapWidget::clearInfoTrace()
 {
+    QList<LocPoint> l;
+    while (mInfoTraces.size() < (mInfoTraceNow + 1)) {
+        mInfoTraces.append(l);
+    }
+
     mInfoTraces[mInfoTraceNow].clear();
     update();
 }

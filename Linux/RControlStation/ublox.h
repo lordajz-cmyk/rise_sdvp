@@ -84,7 +84,7 @@ private slots:
 private:
     typedef struct {
         uint8_t line[256];
-        uint8_t ubx[4096];
+        uint8_t ubx[16384];
         int line_pos;
         int ubx_pos;
         uint8_t ubx_class;

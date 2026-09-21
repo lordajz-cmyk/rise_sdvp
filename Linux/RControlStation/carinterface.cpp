@@ -583,8 +583,24 @@ void CarInterface::configurationReceived(quint8 id, MAIN_CONFIG config)
 {
     if (id == mId) {
         mSettingsReadDone = true;
-        mConfigLast = config;
-        setConfGui(config);
+
+        // Automatically ensure GPS Compensation, RTK requirement, and Base ENU Ref are active on connection
+        if (!config.gps_comp || !config.gps_req_rtk || !config.gps_use_rtcm_base_as_enu_ref || !config.gps_use_ubx_info) {
+            config.gps_comp = true;
+            config.gps_req_rtk = true;
+            config.gps_use_rtcm_base_as_enu_ref = true;
+            config.gps_use_ubx_info = true;
+            mConfigLast = config;
+            setConfGui(config);
+
+            if (mPacketInterface) {
+                mPacketInterface->setConfiguration(mId, config, 3);
+            }
+        } else {
+            mConfigLast = config;
+            setConfGui(config);
+        }
+
         QString str;
 #if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
         str = QString("Car %1: Configuration Received").arg(QString::number(id));

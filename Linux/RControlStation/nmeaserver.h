@@ -78,6 +78,7 @@ public:
     static bool toXML(double refLat, double refLon, const std::string& filename, QByteArray* outXmlData);
 signals:
     void clientGgaRx(int fields, NmeaServer::nmea_gga_info_t gga);
+    void clientLineRx(QByteArray line);
 
 private slots:
     void tcpInputConnected();
