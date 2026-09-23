@@ -25,6 +25,8 @@
 #include <algorithm>
 #include <QMessageBox>
 #include <QPointer>
+#include <QJsonObject>
+#include <QJsonDocument>
 #include <QGroupBox>
 #include <QVBoxLayout>
 #include <QFileDialog>
@@ -344,6 +346,11 @@ MainWindow::MainWindow(QWidget *parent) :
 
         QTimer *statusTimer = new QTimer(this);
         connect(statusTimer, &QTimer::timeout, this, &MainWindow::updateStatusBox);
+        mRouterNet = new QNetworkAccessManager(this);
+        QTimer *routerTimer = new QTimer(this);
+        connect(routerTimer, &QTimer::timeout, this, &MainWindow::pollRouterSignal);
+        routerTimer->start(5000);
+
         statusTimer->start(500); // Första uppdateringen först när konstruktorn är klar (mTcpClientMulti skapas senare)
         mStatusBoxLabel->setText("<b>Lösning:</b> –<br><b>Ping (bil):</b> –");
     }
@@ -2310,7 +2317,69 @@ void MainWindow::updateStatusBox()
                 .arg(col, rtt < 0 ? QString("–") : QString::number(rtt) + " ms");
     }
 
-    mStatusBoxLabel->setText(gps + "<br>" + link);
+    // 4G/5G-raden visas bara när router_signal.py körs på Pi:n (valfritt tillägg)
+    QString router;
+    if (!mRouterLine.isEmpty() && mRouterAge.isValid() && mRouterAge.elapsed() < 15000) {
+        router = "<br>" + mRouterLine;
+    }
+
+    mStatusBoxLabel->setText(gps + "<br>" + link + router);
+}
+
+// Hämtar routerns mottagning från router_signal.py på Pi:n (port 8310).
+void MainWindow::pollRouterSignal()
+{
+    if (mConnectedIp.isEmpty() || !mTcpClientMulti->isAnyConnected()) {
+        return;
+    }
+
+    QNetworkRequest req(QUrl(QString("http://%1:8310/").arg(mConnectedIp)));
+    req.setTransferTimeout(3000);
+    QNetworkReply *reply = mRouterNet->get(req);
+    connect(reply, &QNetworkReply::finished, this, [this, reply]() {
+        reply->deleteLater();
+        if (reply->error() != QNetworkReply::NoError) {
+            mRouterLine.clear(); // router_signal körs inte på Pi:n – visa ingen rad alls
+            return;
+        }
+
+        QJsonObject o = QJsonDocument::fromJson(reply->readAll()).object();
+        if (!o.value("ok").toBool()) {
+            mRouterLine = QString("<b>4G/5G:</b> <span style='color:#c00'>%1</span>")
+                    .arg(o.value("error").toString().toHtmlEscaped());
+            mRouterAge.restart();
+            return;
+        }
+
+        // Kvalitet efter RSRP (LTE/5G) om den finns, annars RSSI.
+        QString quality, col, value;
+        if (!o.value("rsrp").isNull()) {
+            double rsrp = o.value("rsrp").toDouble();
+            value = QString("RSRP %1 dBm").arg(rsrp, 0, 'f', 0);
+            if (rsrp >= -80) { quality = "utmärkt"; col = "#080"; }
+            else if (rsrp >= -90) { quality = "bra"; col = "#080"; }
+            else if (rsrp >= -100) { quality = "ok"; col = "#c70"; }
+            else { quality = "svag"; col = "#c00"; }
+        } else {
+            double rssi = o.value("rssi").toDouble();
+            value = QString("RSSI %1 dBm").arg(rssi, 0, 'f', 0);
+            if (rssi >= -65) { quality = "utmärkt"; col = "#080"; }
+            else if (rssi >= -75) { quality = "bra"; col = "#080"; }
+            else if (rssi >= -85) { quality = "ok"; col = "#c70"; }
+            else { quality = "svag"; col = "#c00"; }
+        }
+
+        QString type = o.value("conntype").toString();
+        QString op = o.value("operator").toString();
+        QString sinr = o.value("sinr").isNull() ? QString()
+                : QString(", SINR %1 dB").arg(o.value("sinr").toDouble(), 0, 'f', 0);
+
+        mRouterLine = QString("<b>4G/5G:</b> %1%2<br>&nbsp;&nbsp;<span style='color:%3'><b>%4</b></span> (%5%6)")
+                .arg(type.isEmpty() ? QString("?") : type.toHtmlEscaped(),
+                     op.isEmpty() ? QString() : " " + op.toHtmlEscaped(),
+                     col, quality, value, sinr);
+        mRouterAge.restart();
+    });
 }
 
 bool MainWindow::gamepadAttached()
@@ -5261,6 +5330,7 @@ void MainWindow::on_tcpConnectButton_clicked()
         ui->mapStreamNmeaServerEdit->setText(ipPort.at(0));
         ui->mapStreamNmeaPortBox->setValue(2948);
         mNmea->connectClientTcp(ipPort.at(0), 2948);
+        mConnectedIp = ipPort.at(0);
     }
 }
 

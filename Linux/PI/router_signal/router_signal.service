@@ -1,0 +1,13 @@
+[Unit]
+Description=4G/5G-mottagning från Teltonika-routern till RControlStation
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=robant
+ExecStart=/usr/bin/python3 /home/robant/RControllStation/rise_sdvp/Linux/PI/router_signal/router_signal.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,10 @@
+# Kopiera till ~/.config/router_signal.conf och kör: chmod 600 ~/.config/router_signal.conf
+[router]
+url = https://192.168.1.1
+username = admin
+password = BYT_MIG
+# Routerns certifikat är självsignerat på det lokala nätet
+verify_tls = false
+
+[server]
+port = 8310

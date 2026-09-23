@@ -433,6 +433,11 @@ private:
     QElapsedTimer mGgaAge;                  // Tid sedan senaste GGA från RTK-strömmen
     QElapsedTimer mStateAge;                // Tid sedan senaste statuspaket från bilen
     void updateStatusBox();
+    QString mConnectedIp;                   // IP till bilen vi senast anslöt till
+    QNetworkAccessManager *mRouterNet = nullptr; // Egen hanterare: mNetworkManager har globala finished-kopplingar
+    QString mRouterLine;                    // Färdig HTML-rad för 4G/5G-mottagningen
+    QElapsedTimer mRouterAge;
+    void pollRouterSignal();
     QMap<int, float> mLastActionValues; // Senast skickade värde per action (≠ 0), skickas om av mRcResendTimer
     QTimer *mRcResendTimer = nullptr;
     void rcResendTick();
