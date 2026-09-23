@@ -128,7 +128,11 @@ if (1)
 		// Map s1 to 0.0 and s2 to 1.0
 #ifdef SERVO_VESC_HYDRAULIC
 //		commands_printf("SERVO_VESC_HYDRAULIC %d\n",SERVO_VESC_ID);
+		// Låst: vesc_id är global och delas med motor_set_vesc_value(). Utan låset
+		// kunde den här tråden byta mottagare mitt i ett dosa-kommando.
+		comm_can_lock_vesc();
 		comm_can_set_vesc_id(SERVO_VESC_ID);
+		comm_can_unlock_vesc();
 
 		(void)as5047_read;
 	#ifdef ADDIO

@@ -70,6 +70,8 @@ public:
     void populateMotorTypeComboBoxes(const QList<QPair<int, QString>>& motorTypes);
     void populateActionsComboBoxes(const QList<QPair<int, QString>>& actions);
     void populateModesComboBoxes(const QList<QPair<int, QString>>& modes);
+
+public slots:
     void nmeaReceived(quint8 id, QByteArray nmea_msg);
 
 signals:

@@ -57,4 +57,9 @@ void find_ones_positions(unsigned long number);
 
 
 
+// Senast mottagna CAN-status från VESC (används av CMD_GET_VESC_STATUS).
+can_status_msg *comm_can_get_status_msg_index(int index);
+can_status_msg *comm_can_get_status_msg_id(int id);
+uint32_t comm_can_get_esr(void);
+
 #endif /* COMM_CAN_H_ */

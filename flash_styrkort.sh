@@ -3,8 +3,23 @@
 # ==============================================================================
 # ⚡ flash_styrkort.sh: Kompilera och programmera Carcontroller-kortet (STM32)
 # ==============================================================================
-# Detta skript fokuserar ENBART på att bygga styrsystemets firmware, flasha
-# det till STM32-mikrodatorn via ST-LINK V2, samt köra ett live-diagnostiktest.
+# Bygger styrsystemets firmware (rise_sdvp / RC_Controller), flashar det till
+# STM32-kortet via ST-LINK V2 och kan köra ett live-diagnostiktest.
+#
+# Fungerar oavsett var skriptet ligger (rise_sdvp-mappen, robot-control-repot
+# eller någon annanstans): firmware-källan hittas automatiskt, se hitta_fw_dir.
+#
+# Användning:
+#   ./flash_styrkort.sh                      interaktivt, som förut
+#   ./flash_styrkort.sh --maskin drangen     hoppa över maskinfrågan
+#   ./flash_styrkort.sh --bara-bygg          bygg och kontrollera, RÖR INGEN HÅRDVARA
+#   ./flash_styrkort.sh --patch FIL.patch    bygg i en TILLFÄLLIG KOPIA med patchen
+#                                            applicerad; din firmware-mapp lämnas orörd
+#   ./flash_styrkort.sh --fw-dir MAPP        peka ut RC_Controller-mappen själv
+#                                            (eller sätt miljövariabeln RC_FW_DIR)
+#
+# Flashningen kräver ALLTID att du skriver ordet FLASHA — det finns inget flagga
+# som hoppar över det. Bygget kan köras utan att någon hårdvara är inkopplad.
 # ==============================================================================
 
 GREEN='\e[32m'
@@ -14,62 +29,184 @@ BLUE='\e[34m'
 BOLD='\e[1m'
 NC='\e[0m' # No Color
 
-# Ta reda på den faktiska användaren och sök efter projektmappen
+# Ta reda på den faktiska användaren och var skriptet ligger
 REAL_USER=${SUDO_USER:-$USER}
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
+FW_NAME=""
+PATCH_FILE=""
+BUILD_ONLY=0
+FW_DIR_ARG="${RC_FW_DIR:-}"
+
+usage() {
+  sed -n '3,25p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+}
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --maskin)     FW_NAME="$2"; shift 2 ;;
+    --patch)      PATCH_FILE="$2"; shift 2 ;;
+    --bara-bygg)  BUILD_ONLY=1; shift ;;
+    --fw-dir)     FW_DIR_ARG="$2"; shift 2 ;;
+    -h|--hjalp|--help) usage; exit 0 ;;
+    *) echo -e "${RED}Okänt argument: $1${NC}"; usage; exit 1 ;;
+  esac
+done
+
+# ------------------------------------------------------------------------------
+# Hitta firmware-källan (Embedded/RC_Controller). Första träffen med en Makefile
+# vinner. Ordningen: --fw-dir/RC_FW_DIR, sedan vanliga platser relativt skriptet,
+# sedan RControlStation-installationen i hemkatalogen.
+# ------------------------------------------------------------------------------
+hitta_fw_dir() {
+  local c
+  local hem
+  hem=$(getent passwd "$REAL_USER" | cut -d: -f6)
+  for c in \
+    "$FW_DIR_ARG" \
+    "$DIR/Embedded/RC_Controller" \
+    "$DIR/rise_sdvp/Embedded/RC_Controller" \
+    "$DIR/../rise_sdvp/Embedded/RC_Controller" \
+    "$hem/RControllStation/rise_sdvp/Embedded/RC_Controller" \
+    "$hem/RControlStation/rise_sdvp/Embedded/RC_Controller"; do
+    if [ -n "$c" ] && [ -f "$c/Makefile" ] && [ -f "$c/commands.c" ]; then
+      ( cd "$c" && pwd )
+      return 0
+    fi
+  done
+  return 1
+}
 
 echo -e "${BLUE}${BOLD}======================================================================${NC}"
 echo -e "${BLUE}${BOLD}   ⚡  FLASHNING AV CARCONTROLLER-KORTET (STM32-MIKRODATORN)   ⚡${NC}"
 echo -e "${BLUE}${BOLD}======================================================================${NC}"
 
-# Kontrollera om utvecklingsverktygen för ARM och OpenOCD finns installerade
-if ! command -v arm-none-eabi-gcc &> /dev/null || ! command -v openocd &> /dev/null; then
-  echo -e "${YELLOW}⚠️ Kompilatorer för STM32 eller OpenOCD saknas på din Pi.${NC}"
-  echo -e "Installerar utvecklingsverktyg nu... (kräver sudo)"
-  sudo apt update && sudo apt install -y build-essential openocd gcc-arm-none-eabi
+FW_SRC=$(hitta_fw_dir)
+if [ -z "$FW_SRC" ]; then
+  echo -e "${RED}❌ Hittade inte firmware-källan (Embedded/RC_Controller).${NC}"
+  echo -e "Ange var den ligger: ${BOLD}$0 --fw-dir /sökväg/till/Embedded/RC_Controller${NC}"
+  exit 1
+fi
+echo -e "Firmware-källa: ${BOLD}$FW_SRC${NC}"
+
+# Kontrollera om utvecklingsverktygen för ARM och OpenOCD finns installerade.
+# OpenOCD behövs bara om vi ska flasha.
+NEED_TOOLS="arm-none-eabi-gcc"
+[ "$BUILD_ONLY" -eq 0 ] && NEED_TOOLS="$NEED_TOOLS openocd"
+MISSING=""
+for t in $NEED_TOOLS; do
+  command -v "$t" &> /dev/null || MISSING="$MISSING $t"
+done
+if [ -n "$MISSING" ]; then
+  echo -e "${YELLOW}⚠️ Verktyg saknas på den här datorn:${BOLD}$MISSING${NC}"
+  read -p "Installera build-essential, openocd och gcc-arm-none-eabi med apt (kräver sudo)? [j/N] " ANS
+  if [[ "$ANS" =~ ^[JjYy]$ ]]; then
+    sudo apt update && sudo apt install -y build-essential openocd gcc-arm-none-eabi
+  else
+    echo -e "${RED}Avbryter — verktygen behövs.${NC}"
+    exit 1
+  fi
 fi
 
 # ------------------------------------------------------------------------------
 # 🛠️ STEG 1: Välj maskintyp och kompilera firmware
 # ------------------------------------------------------------------------------
-echo -e "\n${YELLOW}${BOLD}[Steg 1/3] Välj vilken maskin du vill bygga för:${NC}"
-echo -e " 1) ${BOLD}Drängen${NC}"
-echo -e " 2) ${BOLD}Mactrac${NC}"
-read -p "Välj maskin (1 eller 2): " M_CHOICE
-
-FW_NAME=""
-if [ "$M_CHOICE" == "1" ]; then
-  FW_NAME="drangen"
-elif [ "$M_CHOICE" == "2" ]; then
-  FW_NAME="mactrac"
+if [ -z "$FW_NAME" ]; then
+  echo -e "\n${YELLOW}${BOLD}[Steg 1/3] Välj vilken maskin du vill bygga för:${NC}"
+  echo -e " 1) ${BOLD}Drängen${NC}"
+  echo -e " 2) ${BOLD}Mactrac${NC}"
+  read -p "Välj maskin (1 eller 2): " M_CHOICE
+  case "$M_CHOICE" in
+    1) FW_NAME="drangen" ;;
+    2) FW_NAME="mactrac" ;;
+    *) echo -e "${RED}Ogiltigt val! Avbryter.${NC}"; exit 1 ;;
+  esac
 else
-  echo -e "${RED}Ogiltigt val! Avbryter.${NC}"
-  exit 1
+  echo -e "\n${YELLOW}${BOLD}[Steg 1/3] Maskin: $FW_NAME${NC}"
+  case "$FW_NAME" in
+    drangen|mactrac) ;;
+    *) echo -e "${RED}Okänd maskin '$FW_NAME' (drangen eller mactrac). Avbryter.${NC}"; exit 1 ;;
+  esac
 fi
 
-FW_DIR="$DIR/rise_sdvp/Embedded/RC_Controller"
+# Med --patch byggs en tillfällig kopia (patchen är skriven med sökvägar som
+# Embedded/RC_Controller/..., så kopian lägger firmware-mappen där). Annars byggs
+# källmappen på plats, precis som förut.
+TMP_ROOT=""
+cleanup() { [ -n "$TMP_ROOT" ] && rm -rf "$TMP_ROOT"; }
+trap cleanup EXIT
+
+if [ -n "$PATCH_FILE" ]; then
+  if [ ! -f "$PATCH_FILE" ]; then
+    echo -e "${RED}❌ Hittar inte patchfilen: $PATCH_FILE${NC}"
+    exit 1
+  fi
+  PATCH_FILE=$(cd "$(dirname "$PATCH_FILE")" && pwd)/$(basename "$PATCH_FILE")
+  TMP_ROOT=$(mktemp -d)
+  mkdir -p "$TMP_ROOT/Embedded"
+  cp -r "$FW_SRC" "$TMP_ROOT/Embedded/RC_Controller"
+  rm -rf "$TMP_ROOT/Embedded/RC_Controller/build" "$TMP_ROOT/Embedded/RC_Controller/.dep"
+  if ! ( cd "$TMP_ROOT" && patch -p1 --dry-run < "$PATCH_FILE" > /dev/null ); then
+    echo -e "${RED}❌ Patchen passar inte mot den här firmware-versionen (kanske redan applicerad?).${NC}"
+    exit 1
+  fi
+  ( cd "$TMP_ROOT" && patch -p1 < "$PATCH_FILE" )
+  FW_DIR="$TMP_ROOT/Embedded/RC_Controller"
+  echo -e "${GREEN}Patch applicerad på en tillfällig kopia — din firmware-mapp är orörd.${NC}"
+else
+  FW_DIR="$FW_SRC"
+fi
+
 echo -e "\nKompilerar firmware för ${BOLD}$FW_NAME${NC}..."
 
 # Bygg källkoden (körs som den vanliga användaren för att undvika root-ägda filer)
 if [ "$EUID" -eq 0 ]; then
   sudo -u "$REAL_USER" bash -c "cd '$FW_DIR' && make clean && make -j\$(nproc) $FW_NAME"
 else
-  cd "$FW_DIR" && make clean && make -j$(nproc) $FW_NAME
+  ( cd "$FW_DIR" && make clean && make -j"$(nproc)" "$FW_NAME" )
 fi
+BUILD_RC=$?
 
-if [ $? -eq 0 ]; then
+BIN="$FW_DIR/build/fw_${FW_NAME}.bin"
+if [ $BUILD_RC -eq 0 ] && [ -f "$BIN" ]; then
   echo -e "${GREEN}✅ Styrkortets firmware ($FW_NAME) kompilerad framgångsrikt!${NC}"
+  echo -e "   Fil:    $BIN"
+  echo -e "   Storlek: $(stat -c %s "$BIN") byte   sha256: $(sha256sum "$BIN" | cut -c1-16)…"
 else
   echo -e "${RED}❌ Kompileringsfel för styrkortets firmware. Kontrollera loggarna ovan.${NC}"
   exit 1
+fi
+
+# Med --patch försvinner den tillfälliga kopian när skriptet slutar, så spara
+# binären bredvid skriptet så att den går att flasha/granska senare.
+if [ -n "$TMP_ROOT" ]; then
+  mkdir -p "$DIR/fw_out"
+  cp "$BIN" "$DIR/fw_out/fw_${FW_NAME}_patchad.bin"
+  BIN="$DIR/fw_out/fw_${FW_NAME}_patchad.bin"
+  echo -e "   Sparad kopia: $BIN"
+fi
+
+if [ "$BUILD_ONLY" -eq 1 ]; then
+  echo -e "\n${GREEN}${BOLD}Klart (--bara-bygg): ingen hårdvara har rörts, ingenting flashades.${NC}"
+  exit 0
 fi
 
 # ------------------------------------------------------------------------------
 # ⚡ STEG 2: Flasha styrkortet med ST-LINK V2
 # ------------------------------------------------------------------------------
 echo -e "\n${YELLOW}${BOLD}[Steg 2/3] Förbered programmering via ST-LINK V2...${NC}"
+
+# På robotens Pi ligger Car_Client och kortet i drift. En flashning startar om
+# kortet, så varna tydligt innan något görs.
+CAR_CLIENT_RUNNING=0
+if pgrep -x Car_Client > /dev/null 2>&1; then
+  CAR_CLIENT_RUNNING=1
+  echo -e "${RED}${BOLD}⚠️  Car_Client körs på den här datorn.${NC} Flashningen startar om styrkortet"
+  echo -e "   och avbryter allt som styr roboten just nu. Försäkra dig om att roboten står stilla."
+fi
+
 echo -e "${BLUE}${BOLD}Instruktioner för hårdvarukoppling:${NC}"
-echo -e "1. Anslut din ${BOLD}ST-LINK V2 USB-sticka${NC} till din Raspberry Pi (eller PC)."
+echo -e "1. Anslut din ${BOLD}ST-LINK V2 USB-sticka${NC} till datorn."
 echo -e "2. Koppla SWD-kablarna till Carcontroller-kortets SWD-pinnar:"
 echo -e "   - ${BOLD}SWCLK${NC} -> SWCLK"
 echo -e "   - ${BOLD}SWDIO${NC} -> SWDIO"
@@ -77,22 +214,26 @@ echo -e "   - ${BOLD}GND${NC}   -> GND"
 echo -e "   - ${BOLD}3.3V${NC}  -> 3.3V (Strömsätter styrkortet direkt från ST-LINK!)"
 echo ""
 
-read -p "Är hårdvaran inkopplad och redo? Tryck på [ENTER] för att flasha!" ReadyTrigger
+echo -e "Firmware som flashas: ${BOLD}$BIN${NC}"
+read -p "Skriv ordet FLASHA för att programmera kortet (allt annat avbryter): " CONFIRM
+if [ "$CONFIRM" != "FLASHA" ]; then
+  echo -e "${YELLOW}Avbrutet — ingenting flashades.${NC}"
+  exit 0
+fi
 
 # Kontrollera om ST-LINK syns på USB-bussen
-lsusb | grep -i "st-link" &> /dev/null
-if [ $? -ne 0 ]; then
+if ! lsusb | grep -qi "st-link"; then
   echo -e "${YELLOW}⚠️ Kunde inte hitta någon ST-LINK V2 ansluten via USB. Kontrollera kontakten.${NC}"
-  read -p "Vill du försöka flasha ändå? Tryck [ENTER] för att köra OpenOCD." RetryTrigger
+  read -p "Vill du försöka flasha ändå? Tryck [ENTER] för att köra OpenOCD (Ctrl+C avbryter)." RetryTrigger
 fi
 
 echo -e "\n${BOLD}Startar flashning via OpenOCD...${NC}"
 
-# 
+# (Flashkommandot är oförändrat från originalskriptet.)
 if [ "$EUID" -ne 0 ]; then
-  sudo openocd -f board/stm32f4discovery.cfg -c "reset_config trst_only combined" -c "program $FW_DIR/build/fw_${FW_NAME}.bin verify reset exit 0x08000000"
+  sudo openocd -f board/stm32f4discovery.cfg -c "reset_config trst_only combined" -c "program $BIN verify reset exit 0x08000000"
 else
-  openocd -f board/stm32f4discovery.cfg -c "reset_config trst_only combined" -c "program $FW_DIR/build/fw_${FW_NAME}.bin verify reset exit 0x08000000"
+  openocd -f board/stm32f4discovery.cfg -c "reset_config trst_only combined" -c "program $BIN verify reset exit 0x08000000"
 fi
 
 if [ $? -eq 0 ]; then
@@ -134,35 +275,40 @@ if [[ "$RUN_DIAG" =~ ^[Yy]$ ]] || [[ -z "$RUN_DIAG" ]]; then
     echo -e "Kontrollera att USB-sladdarna sitter i ordentligt och att kortet har ström."
   fi
 
-  # Testa om vi kan detektera GPS-dataströmmen live på någon av portarna
+  # Läsning direkt från portarna stjäl data från Car_Client, så hoppa över den
+  # när Car_Client kör (då äger den portarna).
   GPS_PORT=""
-  for port in "$PORT0" "$PORT1"; do
-    if [ -c "$port" ]; then
-      # Läs 5 rader under max 1.5 sekunder och sök efter NMEA-kod ($G)
-      if timeout 1.5 head -n 5 "$port" 2>/dev/null | grep -q "\$G"; then
-        GPS_PORT="$port"
-        break
-      fi
-    fi
-  done
-
-  if [ -n "$GPS_PORT" ]; then
-    echo -e "\n${GREEN}✅ DETEKTERADE GPS-DATASTRÖM LIVE PÅ PORT: $GPS_PORT!${NC}"
-    echo -e "Här är råa, nytagna GPS-rader från ditt inbyggda u-blox chip:"
-    echo -e "${BLUE}----------------------------------------------------------------------${NC}"
-    # Visa rader som innehåller GPS GGA eller liknande
-    timeout 1 head -n 3 "$GPS_PORT" | grep "\$G"
-    echo -e "${BLUE}----------------------------------------------------------------------${NC}"
-    echo -e "Detta bekräftar att u-blox-mottagaren fungerar utmärkt och skickar data!"
+  if [ "$CAR_CLIENT_RUNNING" -eq 1 ]; then
+    echo -e "\n${YELLOW}Hoppar över GPS-läsningen: Car_Client kör och äger portarna.${NC}"
   else
-    echo -e "\n${YELLOW}⚠️ Kunde inte automatiskt läsa någon GPS-dataström på USB-portarna.${NC}"
-    echo -e "Detta beror oftast på att u-blox-enheten är tyst eller att behörigheterna spökar."
+    # Testa om vi kan detektera GPS-dataströmmen live på någon av portarna
+    for port in "$PORT0" "$PORT1"; do
+      if [ -c "$port" ]; then
+        # Läs 5 rader under max 1.5 sekunder och sök efter NMEA-kod ($G)
+        if timeout 1.5 head -n 5 "$port" 2>/dev/null | grep -q "\$G"; then
+          GPS_PORT="$port"
+          break
+        fi
+      fi
+    done
+
+    if [ -n "$GPS_PORT" ]; then
+      echo -e "\n${GREEN}✅ DETEKTERADE GPS-DATASTRÖM LIVE PÅ PORT: $GPS_PORT!${NC}"
+      echo -e "Här är råa, nytagna GPS-rader från ditt inbyggda u-blox chip:"
+      echo -e "${BLUE}----------------------------------------------------------------------${NC}"
+      # Visa rader som innehåller GPS GGA eller liknande
+      timeout 1 head -n 3 "$GPS_PORT" | grep "\$G"
+      echo -e "${BLUE}----------------------------------------------------------------------${NC}"
+      echo -e "Detta bekräftar att u-blox-mottagaren fungerar utmärkt och skickar data!"
+    else
+      echo -e "\n${YELLOW}⚠️ Kunde inte automatiskt läsa någon GPS-dataström på USB-portarna.${NC}"
+      echo -e "Detta beror oftast på att u-blox-enheten är tyst eller att behörigheterna spökar."
+    fi
   fi
 fi
 
 echo -e "\n${GREEN}${BOLD}======================================================================${NC}"
-echo -e "${GREEN}${BOLD}🎉 ALLT KLART! STYRKORTET ÄR NYFLASHAT OCH BEVISAT FUNGERANDE! 🎉${NC}"
+echo -e "${GREEN}${BOLD}🎉 FLASHNINGEN ÄR KLAR! 🎉${NC}"
 echo -e "${GREEN}${BOLD}======================================================================${NC}"
-echo -e "Din styrsystem-firmware (${BOLD}$FW_NAME${NC}) har laddats upp till Carcontroller-kortet."
-echo -e "Kortet är nu redo att monteras på roboten och anslutas till din Raspberry Pi!"
+echo -e "Firmware (${BOLD}$FW_NAME${NC}) har laddats upp till Carcontroller-kortet."
 echo -e "======================================================================"

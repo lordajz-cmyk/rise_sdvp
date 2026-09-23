@@ -20,6 +20,7 @@
 #include "bldc_interface.h"
 #include "hydraulic.h"
 #include "utils.h"
+#include "ch.h"
 #include "conf_general.h"
 #include "autopilot.h"
 #include "steering_control.h"
@@ -135,28 +136,22 @@ void motor_set_speed(float speed)
 
 void motor_set_vesc_value(int id, float value,motor_control_mode mode)
 {
-	commands_printf("VESC command - ENTERED FUNCTION!");
-	commands_printf("id: %d (addr: %p)", id, &id);
-	
-	// Debug: Print float value safely
-	print_float_safe("value", value);
-	
-	// Convert to integer representation for safe printing
-	int32_t int_bits;
-memcpy(&int_bits, &value, sizeof(float));
-//	commands_printf("value as int bits: 0x%08X (%d)", int_bits, int_bits);
-	
-	// Print as hex float
-//	commands_printf("value addr: %p", &value);
-	
-	commands_printf("mode: %d (addr: %p)", mode, &mode);
-	
-	// Debug: Check if value is reasonable
-	if (fabs(value) > 1000.0f) {
-		commands_printf("WARNING: Unreasonable value detected!");
-		print_float_safe("fabs(value)", fabs(value));
+	// Diagnostik, högst två gånger per sekund per VESC: CAN-felräknare och vad
+	// VESC:en själv rapporterar i sin CAN-status (duty, rpm, ström, ålder).
+	static systime_t last_print[256];
+	if (id >= 0 && id < 256 && chVTTimeElapsedSinceX(last_print[id]) > MS2ST(500)) {
+		last_print[id] = chVTGetSystemTimeX();
+		uint32_t esr = comm_can_get_esr();
+		can_status_msg *st = comm_can_get_status_msg_id(id);
+		commands_printf("VESC out: id=%d mode=%d val=%d | CAN TEC=%d BOFF=%d | status: %s duty=%d rpm=%d I=%d age=%d",
+				id, mode, (int)(value * 1000.0),
+				(int)((esr >> 16) & 0xFF), (int)((esr >> 2) & 0x1),
+				st ? "hord" : "aldrig hord",
+				st ? (int)(st->duty * 1000.0) : 0,
+				st ? (int)st->rpm : 0,
+				st ? (int)(st->current * 10.0) : 0,
+				st ? (int)ST2MS(chVTTimeElapsedSinceX(st->rx_time)) : -1);
 	}
-
 
  	comm_can_lock_vesc();
 	comm_can_set_vesc_id(id);
@@ -423,39 +418,46 @@ void motor_handle_route_end(void) {
 
 // Function to get actuators by activity
 ACTUATOR* motor_get_actuators_by_activity(uint16_t activity, int* count) {
-    MAIN_CONFIG conf;
-    conf_general_read_main_conf(&conf);
-    
+    // Use the live in-RAM config (the same one CMD_GET_MAIN_CONFIG reports back to the
+    // GUI) instead of re-reading EEPROM on every single RC command. Re-reading from
+    // EEPROM here meant that if a CMD_SET_MAIN_CONFIG write ever only partially
+    // persisted to flash (the store loop can bail out early on a failed
+    // EE_WriteVariable, silently, with no error reported anywhere), RAM and EEPROM
+    // could disagree: the GUI's "Read" would show the just-written actuator activity
+    // correctly (it reads RAM), while this function would still see the stale EEPROM
+    // copy and never match any actuator — so the joystick would send the right
+    // activity but no VESC would ever respond.
+
     // Initialize count to 0
     *count = 0;
-    
+
     // Loop through all actuators in the configuration
-    for (int i = 0; i < conf.vehicle.actuators; i++) {
-        if (conf.vehicle.actuator[i].activity == activity) {
+    for (int i = 0; i < main_config.vehicle.actuators; i++) {
+        if (main_config.vehicle.actuator[i].activity == activity) {
             (*count)++;
         }
     }
-    
+
     // If no actuators found, return NULL
     if (*count == 0) {
         return NULL;
     }
-    
+
     // Allocate memory for the result (this should be freed by the caller)
     ACTUATOR* result = (ACTUATOR*)malloc(*count * sizeof(ACTUATOR));
     if (result == NULL) {
         *count = 0;
         return NULL;
     }
-    
+
     // Copy matching actuators to the result array
     int result_index = 0;
-    for (int i = 0; i < conf.vehicle.actuators; i++) {
-        if (conf.vehicle.actuator[i].activity == activity) {
-            result[result_index] = conf.vehicle.actuator[i];
+    for (int i = 0; i < main_config.vehicle.actuators; i++) {
+        if (main_config.vehicle.actuator[i].activity == activity) {
+            result[result_index] = main_config.vehicle.actuator[i];
             result_index++;
         }
     }
-    
+
     return result;
 }

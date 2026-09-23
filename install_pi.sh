@@ -202,8 +202,6 @@ if [ -d "$DIR/Linux/Car_Client" ]; then
   CLIENT_DIR="$DIR/Linux/Car_Client"
 elif [ -d "$DIR/rise_sdvp/Linux/Car_Client" ]; then
   CLIENT_DIR="$DIR/rise_sdvp/Linux/Car_Client"
-elif [ -d "$DIR/rise_sdvp/rise_sdvp/Linux/Car_Client" ]; then
-  CLIENT_DIR="$DIR/rise_sdvp/rise_sdvp/Linux/Car_Client"
 fi
 
 if [ -n "$CLIENT_DIR" ] && [ -d "$CLIENT_DIR" ]; then

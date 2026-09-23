@@ -2,6 +2,7 @@
 #include <QtWidgets>
 #include <QStandardPaths>
 #include <QDir>
+#include <QFile>
 #include <QDebug>
 #include <QCoreApplication>
 
@@ -144,26 +145,39 @@ QSqlError database::initDb()
 {
     db = QSqlDatabase::addDatabase("QSQLITE");
     
-    // Try different locations for the database file
+    // Try different locations for the database file. Ordered so that the path tied to
+    // the BINARY's own location (deterministic, independent of the terminal's current
+    // directory) is tried before the working-directory-relative one — otherwise a stray
+    // "data.db" left behind in whatever folder the app happens to be launched from
+    // (e.g. $HOME) silently wins over the real project database every time.
     QStringList dbPaths;
-    
-    // 1. First try current directory (for development)
-    dbPaths << "data.db";
-    
-    // 2. Try AppImage data directory or local application directory
+
+    // 1. AppImage data directory or local application directory (next to the binary)
     QString appImagePath = QCoreApplication::applicationDirPath();
     dbPaths << appImagePath + "/data.db";
     dbPaths << appImagePath + "/../share/RControlStation/data.db";
     dbPaths << appImagePath + "/../../share/RControlStation/data.db";
     dbPaths << "/usr/share/RControlStation/data.db";
-    
-    // 3. Try common data directories
+
+    // 2. Common data directories
     dbPaths << QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + "/data.db";
     // DataLocation doesn't exist in Qt 6, use AppDataLocation instead
     // dbPaths << QStandardPaths::writableLocation(QStandardPaths::DataLocation) + "/data.db";
+
+    // 3. Current directory last (for development only — e.g. running via `make run`
+    // straight from the source tree without a proper install).
+    dbPaths << "data.db";
     
-    // Try each path until we find a working database
+    // Try each path until we find a working, EXISTING database. SQLite's db.open()
+    // silently creates a fresh empty file if none exists at the given path, so without
+    // this QFile::exists() check the very first candidate ("data.db", relative to the
+    // current working directory) always "succeeds" — creating/opening a throwaway
+    // database whenever the app is launched from a different directory, while the
+    // real project database further down the list is never even tried.
     foreach (const QString &path, dbPaths) {
+        if (!QFile::exists(path)) {
+            continue;
+        }
         db.setDatabaseName(path);
         if (db.open()) {
             qDebug() << "Database opened from:" << path;
@@ -325,16 +339,30 @@ void database::ensureControlsTableExists()
             }
         }
         
-        // Self-healing database check: If controls table is empty or contains only 1 row (remnants of the old buggy Front Lift schema conflict),
+        // Self-healing database check: If controls table is empty, contains only 1 row, OR is missing "Steering Control",
         // reset the table and insert the full set of default controls!
+        bool needRestore = false;
         QSqlQuery checkQuery("SELECT COUNT(*) FROM controls", db);
         if (checkQuery.exec() && checkQuery.next()) {
             int count = checkQuery.value(0).toInt();
             if (count <= 1) {
-                qDebug() << "Stunted controls table detected (count" << count << "). Restoring full default control system...";
-                query.exec("DELETE FROM controls");
-                insertDefaultControls();
+                needRestore = true;
             }
+        }
+        
+        if (!needRestore) {
+            QSqlQuery checkSteering("SELECT COUNT(*) FROM controls WHERE name = 'Steering Control'", db);
+            if (checkSteering.exec() && checkSteering.next()) {
+                if (checkSteering.value(0).toInt() == 0) {
+                    needRestore = true;
+                }
+            }
+        }
+        
+        if (needRestore) {
+            qDebug() << "Controls table needs restoration. Restoring full default control system...";
+            query.exec("DELETE FROM controls");
+            insertDefaultControls();
         }
     }
 }
@@ -560,6 +588,7 @@ void database::insertDefaultControls()
         {"Rear Lift Control", "logical"},
         {"Implement Position", "pid"},
         {"Speed Control", "pid"},
+        {"Steering Control", "pid"},
         {"Emergency Stop", "logical"}
     };
     

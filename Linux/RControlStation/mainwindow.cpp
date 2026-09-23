@@ -24,6 +24,7 @@
 #include <array>
 #include <algorithm>
 #include <QMessageBox>
+#include <QPointer>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QHostInfo>
@@ -326,6 +327,11 @@ MainWindow::MainWindow(QWidget *parent) :
     mJoystickPollTimer = new QTimer(this);
     connect(mJoystickPollTimer, &QTimer::timeout, this, &MainWindow::checkJoystickConnection);
     mJoystickPollTimer->start(5000); // Check every 5 seconds
+
+    // Skicka om aktiva reglagevärden, och nödstoppa om dosan försvinner
+    mRcResendTimer = new QTimer(this);
+    connect(mRcResendTimer, &QTimer::timeout, this, &MainWindow::rcResendTick);
+    mRcResendTimer->start(100);
 #endif
 
     checkboxdelegate=new CheckBoxDelegate(ui->fieldTable);
@@ -375,6 +381,16 @@ MainWindow::MainWindow(QWidget *parent) :
             this, SLOT(enuRx(quint8,double,double,double)));
     connect(mNmea, SIGNAL(clientGgaRx(int,NmeaServer::nmea_gga_info_t)),
             this, SLOT(nmeaGgaRx(int,NmeaServer::nmea_gga_info_t)));
+    connect(mNmea, &NmeaServer::clientLineRx, this, [this](QByteArray line) {
+        if (line.contains("GGA")) {
+            for(QList<CarInterface*>::Iterator it_car = mCars.begin(); it_car != mCars.end(); it_car++) {
+                CarInterface *car = *it_car;
+                if (car->getId() == mActiveCarId || car->getId() == 0) {
+                    car->nmeaReceived(mActiveCarId, line);
+                }
+            }
+        }
+    });
     connect(ui->mapLiveWidget, SIGNAL(routePointAdded(LocPoint)),
             this, SLOT(routePointAdded(LocPoint)));
     connect(ui->mapLiveWidget, SIGNAL(infoTraceChanged(int)),
@@ -414,7 +430,18 @@ MainWindow::MainWindow(QWidget *parent) :
         if (isError) {
             qWarning() << "TCP Error:" << msg << ", ip: " << ip;
             QString all=msg  + ", ip: " + ip;
-            QMessageBox::warning(this, "TCP Error", all);
+            // Bara en felruta i taget, och den blockerar inte. Tidigare öppnade varje
+            // fel en ny modal QMessageBox, och vid död anslutning kom tusentals fel
+            // per minut vilket fick hela skrivbordet att frysa.
+            static QPointer<QMessageBox> tcpErrorBox;
+            if (tcpErrorBox) {
+                tcpErrorBox->setText(all);
+            } else {
+                tcpErrorBox = new QMessageBox(QMessageBox::Warning, "TCP Error", all, QMessageBox::Ok, this);
+                tcpErrorBox->setAttribute(Qt::WA_DeleteOnClose);
+                tcpErrorBox->setModal(false);
+                tcpErrorBox->show();
+            }
             /*
             for (int i = 0; i < ui->carsWidget->count(); ++i) {
                 if (ui->carsWidget->tabText(i) == ip) {
@@ -583,8 +610,18 @@ MainWindow::~MainWindow()
     }
 
 #if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
+    // Stoppa allt som anropar SDL innan SDL stängs, annars kan en timer
+    // använda en redan frigjord controller (segfault i libSDL2 vid avslut).
+    if (mRcResendTimer) {
+        mRcResendTimer->stop();
+    }
+    if (mTimer) {
+        mTimer->stop();
+    }
+    mLastActionValues.clear();
     if (mController) {
         SDL_GameControllerClose(mController);
+        mController = nullptr;
     }
     SDL_Quit();
 #endif
@@ -1009,6 +1046,7 @@ QList<QPair<int, QString>> MainWindow::getMotorTypesFromDatabase()
         motorTypes.append(QPair<int, QString>(id, name));
     }
 
+    qDebug() << "Loaded" << motorTypes.size() << "motor types from database";
     return motorTypes;
 }
 
@@ -1032,6 +1070,7 @@ QList<QPair<int, QString>> MainWindow::getActionsFromDatabase()
         actions.append(QPair<int, QString>(id, name));
     }
 
+    qDebug() << "Loaded" << actions.size() << "actions from database";
     return actions;
 }
 
@@ -1105,6 +1144,7 @@ QList<QPair<int, QString>> MainWindow::getModesFromDatabase()
         modes.append(QPair<int, QString>(id, name));
     }
 
+    qDebug() << "Loaded" << modes.size() << "modes from database";
     return modes;
 }
 
@@ -1123,10 +1163,12 @@ void MainWindow::loadControllerSettingsFromDatabase()
     
     // Create a map to store controller settings
     QMap<int, int> controllerSettings;
+    mCachedControllerActions.clear();
     while (query.next()) {
         int controllerId = query.value(0).toInt();
         int actionId = query.value(1).toInt();
         controllerSettings[controllerId] = actionId;
+        mCachedControllerActions[controllerId] = actionId;
     }
     
     // Set the combo box values based on database settings
@@ -1192,19 +1234,23 @@ void MainWindow::saveControllerSettingsToDatabase()
         }
         
         if (comboBox) {
-            if (comboBox->currentIndex() >= 0) {
+            if (comboBox->currentIndex() > 0) { // Index 0 is "-- None --", so > 0 is a valid action!
                 // Valid selection - save to database
                 int actionId = comboBox->itemData(comboBox->currentIndex()).toInt();
                 query.bindValue(":id", i);
                 query.bindValue(":action", actionId);
                 
+                mCachedControllerActions[i] = actionId;
+
                 if (!query.exec()) {
                     qDebug() << "Failed to save controller" << i << ":" << query.lastError().text();
                 } else {
                     qDebug() << "Saved controller" << i << "-> action" << actionId;
                 }
             } else {
-                // No selection (index -1) - remove from database
+                // No selection (index 0 or -1) - remove from database
+                mCachedControllerActions.remove(i);
+                
                 QSqlQuery deleteQuery(db.getDb());
                 if (!deleteQuery.prepare("DELETE FROM controllers WHERE id = :id")) {
                     qDebug() << "Failed to prepare delete for controller" << i;
@@ -1257,7 +1303,26 @@ void MainWindow::handleControllerInput(int controllerNumber, float value)
         qDebug() << "Invalid controller number:" << controllerNumber << "- must be 1-8";
         return;
     }
-    qDebug() << "Controller idr:" << controllerNumber;
+    
+    // Dödzon: små värden runt mitten blir exakt 0, så att ett släppt reglage alltid
+    // hamnar på 0 hos roboten (annars kunde 0.015 bli kvar och roboten krypa).
+    if (qAbs(value) < 0.02f) {
+        value = 0.0f;
+    }
+
+    // Jitterfilter: skicka inte små ändringar, men en övergång till 0 skickas alltid.
+    // Ett stillastående reglage skickas om av rcResendTick() så att VESC:ernas
+    // timeout inte stänger av motorn medan spaken hålls stilla.
+    if (mCachedControllerValues.contains(controllerNumber)) {
+        float last = mCachedControllerValues[controllerNumber];
+        bool unchanged = (value == 0.0f) ? (last == 0.0f) : (qAbs(last - value) < 0.02f);
+        if (unchanged) {
+            return;
+        }
+    }
+    mCachedControllerValues[controllerNumber] = value;
+    
+    // qDebug() << "Controller idr:" << controllerNumber;
 
     // Update the label text with dynamic ASCII feedback bar in real-time
     switch (controllerNumber) {
@@ -1281,28 +1346,22 @@ void MainWindow::handleControllerInput(int controllerNumber, float value)
             break;
     }
 
-    // Get the action ID for this controller from the database
-    QSqlQuery query(db.getDb());
-    query.prepare("SELECT action FROM controllers WHERE id = :controllerNumber");
-    query.bindValue(":controllerNumber", controllerNumber);
-//    query.bindValue(":controllerId", controllerNumber);
-    
-    if (!query.exec()) {
-        qDebug() << "Failed to query controller action:" << query.lastError().text();
-        return;
-    }
-    
-    if (query.next()) {
+    // Get the action ID for this controller from the cache (avoids 100+ SQL queries/second which hangs the UI thread!)
+    if (mCachedControllerActions.contains(controllerNumber)) {
         // Controller has a configured action
-        int actionId = query.value(0).toInt();
-        qDebug() << "Controller" << controllerNumber << "has action" << actionId 
-                 << "with value" << value;
+        int actionId = mCachedControllerActions[controllerNumber];
         
         // Call controllerAction with:
         // - car: mActiveCarId (the currently selected active car)
         // - iAction: the action ID from the database
         // - value: the input value passed to this function
-        controllerAction(mActiveCarId, actionId, value*ui->throttleMaxBox->value());
+        float scaled = value*ui->throttleMaxBox->value();
+        if (scaled == 0.0f) {
+            mLastActionValues.remove(actionId);
+        } else {
+            mLastActionValues[actionId] = scaled;
+        }
+        controllerAction(mActiveCarId, actionId, scaled);
     } else {
         // No action configured for this controller
         qDebug() << "Controller" << controllerNumber << "has no configured action - ignoring input";
@@ -1900,10 +1959,13 @@ bool MainWindow::connectJoystick()
             qDebug() << "Game controller connected:" << SDL_GameControllerName(controller);
             mController = controller;
 
-            // Set up a timer to poll for gamepad events
-            QTimer* timer = new QTimer(this);
-            connect(timer, &QTimer::timeout, this, &MainWindow::pollGamepad);
-            timer->start(16); // Poll every 16ms
+            // Set up a timer to poll for gamepad events (make it static so it is only created once)
+            static QTimer* timer = nullptr;
+            if (!timer) {
+                timer = new QTimer(this);
+                connect(timer, &QTimer::timeout, this, &MainWindow::pollGamepad);
+                timer->start(16); // Poll every 16ms
+            }
 
             connectJs=true;
         } else {
@@ -2170,13 +2232,45 @@ void MainWindow::timerSlot()
 bool MainWindow::JSconnected()
 {
     #if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
-        int joystickIndex=0;
-        return SDL_JoystickGetAttached(SDL_JoystickOpen(joystickIndex)) == SDL_TRUE;
+        return gamepadAttached();
     #else
     return mJoystick->isConnected();
     #endif
 };
 #endif
+bool MainWindow::gamepadAttached()
+{
+#if defined(HAS_JOYSTICK_CHECK) && (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
+    return mController != nullptr && SDL_WasInit(SDL_INIT_GAMECONTROLLER) != 0 &&
+           SDL_GameControllerGetAttached(mController) == SDL_TRUE;
+#else
+    return true;
+#endif
+}
+
+void MainWindow::rcResendTick()
+{
+    if (mLastActionValues.isEmpty()) {
+        return;
+    }
+
+    if (!gamepadAttached()) {
+        // Dosan borta mitt i körning: nolla allt direkt i stället för att vänta
+        // på hot-plug-kontrollen (5 s).
+        qWarning() << "Gamepad lost while active, sending 0 to all actions";
+        for (auto it = mLastActionValues.constBegin(); it != mLastActionValues.constEnd(); ++it) {
+            controllerAction(mActiveCarId, it.key(), 0.0f);
+        }
+        mLastActionValues.clear();
+        mCachedControllerValues.clear();
+        return;
+    }
+
+    for (auto it = mLastActionValues.constBegin(); it != mLastActionValues.constEnd(); ++it) {
+        controllerAction(mActiveCarId, it.key(), it.value());
+    }
+}
+
 void MainWindow::sendHeartbeat()
 {
     for(QList<CarInterface*>::Iterator it_car = mCars.begin();it_car < mCars.end();it_car++)
@@ -2458,7 +2552,7 @@ void MainWindow::infoTraceChanged(int traceNow)
 void MainWindow::controllerAction(int car, int iAction,float value=0)
 {
     if (mJoystickControlEnabled) {
-        qDebug() << "Sending";
+        // qDebug() << "Sending";
         mPacketInterface->setRcControlAdvanced(car, iAction, value);
     };
 /*
@@ -5071,9 +5165,10 @@ void MainWindow::on_tcpConnectButton_clicked()
         ui->mapStreamNmeaFollowBox->setChecked(false); // Let the user toggle high-precision GPS tracking manually to prevent GUI thread congestion
         ui->mapStreamNmeaZeroEnuBox->setChecked(true); // Automatically zero/align the ENU reference on the first received RTK coordinate!
 
-        // Let the user connect manually to port 2948 NMEA stream to prevent connection thread locking!
+        // Automatically connect to port 2948 NMEA stream (rtkrcv) for real-time RTK satellites and age updates!
         ui->mapStreamNmeaServerEdit->setText(ipPort.at(0));
         ui->mapStreamNmeaPortBox->setValue(2948);
+        mNmea->connectClientTcp(ipPort.at(0), 2948);
     }
 }
 
@@ -7618,6 +7713,9 @@ void MainWindow::on_AutopilotPausePushButton_clicked()
 #if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
 
 void MainWindow::pollGamepad() {
+    if (SDL_WasInit(SDL_INIT_GAMECONTROLLER) == 0) {
+        return;
+    }
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
 //        qDebug() << "button type: " << event.type;

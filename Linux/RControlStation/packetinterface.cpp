@@ -209,6 +209,7 @@ void PacketInterface::processPacket(const unsigned char *data, int len)
 
 /*        QByteArray tmpArray = QByteArray::fromRawData((const char*)data, len);
         tmpArray[len] = '\0';*/
+        qDebug().noquote() << "FW printf [" << id << "]:" << QString::fromLatin1(array).trimmed();
         emit printReceived(id, QString::fromLatin1(array)); // Might need to change this to avoid bad format
     } break;
 
@@ -1146,9 +1147,9 @@ void PacketInterface::hydraulicMove(quint8 id, HYDRAULIC_POS pos, HYDRAULIC_MOVE
 
 void PacketInterface::setRcControlAdvanced(quint8 id, int activity, double value)
 {
-    qDebug() << "Car id: " << id;
-    qDebug() << "Activity: " << activity;
-    qDebug() << "Value: " << value;
+    // qDebug() << "Car id: " << id;
+    // qDebug() << "Activity: " << activity;
+    // qDebug() << "Value: " << value;
 
     qint32 send_index = 0;
     mSendBuffer[send_index++] = id;

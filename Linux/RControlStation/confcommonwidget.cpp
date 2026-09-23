@@ -159,22 +159,41 @@ void ConfCommonWidget::getConfGui(MAIN_CONFIG &conf)
     conf.vehicle.actuators=ui->doubleSpinBox_actuators->value();
 
     qDebug() << "Actuators (from RCS): " << conf.vehicle.actuators;
-    conf.vehicle.actuator[0].type=ui->comboBox_motor1_type->currentData().toInt();
+    // Map GUI Database type ID (1=VESC, 2=Hydraulic) to STM32 enum (0=VESC, 1=Hydraulic)
+    auto mapGuiTypeToStm32 = [](int guiType) -> int {
+        if (guiType == 1) return 0; // VESC -> AT_VESCMOTOR (0)
+        if (guiType == 2) return 1; // Hydraulic -> AT_HYDRAULIC (1)
+        return guiType;
+    };
+
+    conf.vehicle.actuator[0].type = mapGuiTypeToStm32(ui->comboBox_motor1_type->currentData().toInt());
     conf.vehicle.actuator[0].vescid=ui->doubleSpinBox_vescid1->value();
     conf.vehicle.actuator[0].activity=ui->comboBox_motor1_action->currentData().toInt();
-    conf.vehicle.actuator[0].mode=ui->comboBox_motor1_mode->currentData().toInt();
-    conf.vehicle.actuator[1].type=ui->comboBox_motor2_type->currentData().toInt();
+    
+    // Map GUI Database mode ID (1=duty, 2=rpm, 3=current) to STM32 enum (0=duty, 1=current, 2=current_brake, 3=rpm)
+    auto mapGuiModeToStm32 = [](int guiMode) -> int {
+        if (guiMode == 1) return 0; // duty -> MOTOR_CONTROL_DUTY (0)
+        if (guiMode == 3) return 1; // current -> MOTOR_CONTROL_CURRENT (1)
+        if (guiMode == 2) return 3; // rpm -> MOTOR_CONTROL_RPM (3)
+        return guiMode;
+    };
+    
+    conf.vehicle.actuator[0].mode = mapGuiModeToStm32(ui->comboBox_motor1_mode->currentData().toInt());
+    
+    conf.vehicle.actuator[1].type = mapGuiTypeToStm32(ui->comboBox_motor2_type->currentData().toInt());
     conf.vehicle.actuator[1].vescid=ui->doubleSpinBox_vescid2->value();
     conf.vehicle.actuator[1].activity=ui->comboBox_motor2_action->currentData().toInt();
-    conf.vehicle.actuator[1].mode=ui->comboBox_motor2_mode->currentData().toInt();
-    conf.vehicle.actuator[2].type=ui->comboBox_motor3_type->currentData().toInt();
+    conf.vehicle.actuator[1].mode = mapGuiModeToStm32(ui->comboBox_motor2_mode->currentData().toInt());
+    
+    conf.vehicle.actuator[2].type = mapGuiTypeToStm32(ui->comboBox_motor3_type->currentData().toInt());
     conf.vehicle.actuator[2].vescid=ui->doubleSpinBox_vescid3->value();
     conf.vehicle.actuator[2].activity=ui->comboBox_motor3_action->currentData().toInt();
-    conf.vehicle.actuator[2].mode=ui->comboBox_motor3_mode->currentData().toInt();
-    conf.vehicle.actuator[3].type=ui->comboBox_motor4_type->currentData().toInt();
+    conf.vehicle.actuator[2].mode = mapGuiModeToStm32(ui->comboBox_motor3_mode->currentData().toInt());
+    
+    conf.vehicle.actuator[3].type = mapGuiTypeToStm32(ui->comboBox_motor4_type->currentData().toInt());
     conf.vehicle.actuator[3].vescid=ui->doubleSpinBox_vescid4->value();
     conf.vehicle.actuator[3].activity=ui->comboBox_motor4_action->currentData().toInt();
-    conf.vehicle.actuator[3].mode=ui->comboBox_motor4_mode->currentData().toInt();
+    conf.vehicle.actuator[3].mode = mapGuiModeToStm32(ui->comboBox_motor4_mode->currentData().toInt());
 }
 
 void ConfCommonWidget::setConfGui(const MAIN_CONFIG &conf)
@@ -232,25 +251,41 @@ void ConfCommonWidget::setConfGui(const MAIN_CONFIG &conf)
 
     qDebug() << "Actuators (from vehicle): " << conf.vehicle.actuators;
     ui->doubleSpinBox_actuators->setValue(conf.vehicle.actuators);
-    setComboBoxByData(ui->comboBox_motor1_type,conf.vehicle.actuator[0].type);
+    
+    // Map STM32 enum (0=duty, 1=current, 2=current_brake, 3=rpm) to GUI Database mode ID (1=duty, 2=rpm, 3=current)
+    auto mapStm32ModeToGui = [](int stm32Mode) -> int {
+        if (stm32Mode == 0) return 1; // MOTOR_CONTROL_DUTY (0) -> duty (1)
+        if (stm32Mode == 1) return 3; // MOTOR_CONTROL_CURRENT (1) -> current (3)
+        if (stm32Mode == 3) return 2; // MOTOR_CONTROL_RPM (3) -> rpm (2)
+        return stm32Mode;
+    };
+
+    // Map STM32 enum (0=VESC, 1=Hydraulic) back to GUI Database type ID (1=VESC, 2=Hydraulic)
+    auto mapStm32TypeToGui = [](int stm32Type) -> int {
+        if (stm32Type == 0) return 1; // AT_VESCMOTOR (0) -> VESC (1)
+        if (stm32Type == 1) return 2; // AT_HYDRAULIC (1) -> Hydraulic (2)
+        return stm32Type;
+    };
+
+    setComboBoxByData(ui->comboBox_motor1_type, mapStm32TypeToGui(conf.vehicle.actuator[0].type));
     ui->doubleSpinBox_vescid1->setValue(conf.vehicle.actuator[0].vescid);
     setComboBoxByData(ui->comboBox_motor1_action,conf.vehicle.actuator[0].activity);
-    setComboBoxByData(ui->comboBox_motor1_mode,conf.vehicle.actuator[0].mode);
+    setComboBoxByData(ui->comboBox_motor1_mode, mapStm32ModeToGui(conf.vehicle.actuator[0].mode));
 
-    setComboBoxByData(ui->comboBox_motor2_type,conf.vehicle.actuator[1].type);
+    setComboBoxByData(ui->comboBox_motor2_type, mapStm32TypeToGui(conf.vehicle.actuator[1].type));
     ui->doubleSpinBox_vescid2->setValue(conf.vehicle.actuator[1].vescid);
     setComboBoxByData(ui->comboBox_motor2_action,conf.vehicle.actuator[1].activity);
-    setComboBoxByData(ui->comboBox_motor2_mode,conf.vehicle.actuator[1].mode);
+    setComboBoxByData(ui->comboBox_motor2_mode, mapStm32ModeToGui(conf.vehicle.actuator[1].mode));
 
-    setComboBoxByData(ui->comboBox_motor3_type,conf.vehicle.actuator[2].type);
+    setComboBoxByData(ui->comboBox_motor3_type, mapStm32TypeToGui(conf.vehicle.actuator[2].type));
     ui->doubleSpinBox_vescid3->setValue(conf.vehicle.actuator[2].vescid);
     setComboBoxByData(ui->comboBox_motor3_action,conf.vehicle.actuator[2].activity);
-    setComboBoxByData(ui->comboBox_motor3_mode,conf.vehicle.actuator[2].mode);
+    setComboBoxByData(ui->comboBox_motor3_mode, mapStm32ModeToGui(conf.vehicle.actuator[2].mode));
 
-    setComboBoxByData(ui->comboBox_motor4_type,conf.vehicle.actuator[3].type);
+    setComboBoxByData(ui->comboBox_motor4_type, mapStm32TypeToGui(conf.vehicle.actuator[3].type));
     ui->doubleSpinBox_vescid4->setValue(conf.vehicle.actuator[3].vescid);
     setComboBoxByData(ui->comboBox_motor4_action,conf.vehicle.actuator[3].activity);
-    setComboBoxByData(ui->comboBox_motor4_mode,conf.vehicle.actuator[3].mode);
+    setComboBoxByData(ui->comboBox_motor4_mode, mapStm32ModeToGui(conf.vehicle.actuator[3].mode));
 
     /*00
     conf.vehicle.actuator[0].activity=ui->comboBox_motor1_action->currentData().toInt();

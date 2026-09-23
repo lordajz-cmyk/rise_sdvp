@@ -23,6 +23,7 @@
 #include <QFileDialog>
 #include <QTextStream>
 #include <QDateTime>
+#include <QTime>
 
 NmeaWidget::NmeaWidget(QWidget *parent) :
     QWidget(parent),
@@ -41,6 +42,9 @@ NmeaWidget::NmeaWidget(QWidget *parent) :
     QString filename = now.toString("yyyy-MM-dd_hh-mm-ss") + ".txt";
     ui->nmeaLogEdit->setText(filename);
     on_nmeaLogActiveBox_toggled(true);
+
+    // Disable "Print NMEA" by default so the raw NMEA terminal is not active immediately unless requested.
+    ui->nmeaPrintBox->setChecked(false);
 }
 
 NmeaWidget::~NmeaWidget()
@@ -95,7 +99,8 @@ void NmeaWidget::inputNmea(QByteArray msg)
             }
 
             ui->nmeaFixTypeLabel->setText("Solution: " + mFixType);
-            ui->nmeaCorrAgeLabel->setText(QString("Corr age: %1 s").arg(gga.diff_age));
+            ui->nmeaCorrAgeLabel->setText(QString("Corr age: %1 s")
+                                          .arg(gga.diff_age));
         }
     }
 }

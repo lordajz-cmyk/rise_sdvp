@@ -132,8 +132,6 @@ if [[ "$RUN_BUILD" =~ ^[Yy]$ ]] || [[ -z "$RUN_BUILD" ]]; then
     STATION_DIR="$DIR/Linux/RControlStation"
   elif [ -d "$DIR/rise_sdvp/Linux/RControlStation" ]; then
     STATION_DIR="$DIR/rise_sdvp/Linux/RControlStation"
-  elif [ -d "$DIR/rise_sdvp/rise_sdvp/Linux/RControlStation" ]; then
-    STATION_DIR="$DIR/rise_sdvp/rise_sdvp/Linux/RControlStation"
   fi
   
   if [ -n "$STATION_DIR" ] && [ -d "$STATION_DIR" ]; then
@@ -178,7 +176,7 @@ if [[ "$RUN_BUILD" =~ ^[Yy]$ ]] || [[ -z "$RUN_BUILD" ]]; then
 else
   echo -e "\n${BLUE}Bygget hoppades över.${NC}"
   echo -e "Du kan kompilera programmet manuellt när som helst genom att gå till mappen:"
-  echo -e "  ${BOLD}rise_sdvp/rise_sdvp/Linux/RControlStation${NC}"
+  echo -e "  ${BOLD}rise_sdvp/Linux/RControlStation${NC}"
   echo -e "och köra:"
   echo -e "  ${BOLD}./build_cmake_linux.sh release${NC}"
 fi

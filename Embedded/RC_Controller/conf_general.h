@@ -39,7 +39,9 @@
 // #define IO_BOARD
 
 #ifndef IS_MACTRAC
+#ifndef IS_ROBANT
 #define DRANGEN_NY
+#endif
 #endif
 //#define DRANGEN_NY
 #define COMMUNICATION_TIMEOUT_MSEC 6000
@@ -50,6 +52,18 @@
 #define VESC_LEFT 94
 #define VESC_RIGHT 125
 #define VESC_STEERING 113 // 9
+#define LOADING 8
+#define WHEEL_SENSOR                1
+#endif
+
+// RobAnt 3 — VESC-ID:n bekräftade på riktig hårdvara 2026-09-22
+// (vänster=28, höger=36, styrning=76). Eget block så att Drängen/Mactrac
+// inte påverkas.
+#ifdef IS_ROBANT
+#define IS_DRANGEN
+#define VESC_LEFT 28
+#define VESC_RIGHT 36
+#define VESC_STEERING 76
 #define LOADING 8
 #define WHEEL_SENSOR                1
 #endif

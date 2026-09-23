@@ -238,6 +238,7 @@ typedef enum {
     CMD_STATE_CONTROL_ENABLE,   // Enable/disable a control loop
     CMD_STATE_CONTROL_TARGET,   // Set target value for a control loop
     CMD_TEST_SENSOR_STATE,      // Test sensor and state control system
+    CMD_GET_VESC_STATUS = 140,  // NY: lista VESC-ID:n som hörts på CAN + senaste status
 
 	// Mote commands
 	CMD_MOTE_UBX_START_BASE = 200,

@@ -541,7 +541,8 @@ int SerialPort::writeData(const char *data, int length, bool block)
             } else if(res == 0) {
                 // Timeout
                 timeouts++;
-                if (timeouts > 200) { // 200ms total wait time
+                if (timeouts > 800) { // 800ms total wait time (höjt från 200ms: en enskild EEPROM-variabel
+                                       // kan ta över 200ms att skriva på styrkortet vid en flash-sidöverföring)
                     qCritical() << "Write timeout on serial port, aborting write to prevent deadlock.";
                     return -3;
                 }

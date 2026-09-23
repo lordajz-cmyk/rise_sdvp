@@ -1086,6 +1086,41 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 			commands_send_packet(m_send_buffer, send_index);
 		} break;
 
+		case CMD_GET_VESC_STATUS: {
+			// Läser bara: listar de VESC som skickat CAN-status (comm_can.c),
+			// ändrar inget och skickar inget på CAN-bussen.
+			// Svar: [id][cmd] { [vesc_id u8][ålder ms u16][rpm i32]
+			//                   [ström*10 i16][duty*1000 i16] } för varje VESC.
+			commands_set_send_func(func);
+
+			int32_t send_index = 0;
+			m_send_buffer[send_index++] = id_ret;
+			m_send_buffer[send_index++] = packet_id;
+
+			for (int i = 0;;i++) {
+				can_status_msg *msg = comm_can_get_status_msg_index(i);
+				if (!msg) {
+					break; // slut på lagrade statusplatser
+				}
+				if (msg->id < 0 || msg->id > 255) {
+					continue; // oanvänd plats (id = -1)
+				}
+
+				uint32_t age_ms = ST2MS(chVTTimeElapsedSinceX(msg->rx_time));
+				if (age_ms > 65535) {
+					age_ms = 65535;
+				}
+
+				m_send_buffer[send_index++] = (uint8_t)msg->id;
+				buffer_append_uint16(m_send_buffer, (uint16_t)age_ms, &send_index);
+				buffer_append_int32(m_send_buffer, (int32_t)msg->rpm, &send_index);
+				buffer_append_int16(m_send_buffer, (int16_t)(msg->current * 10.0), &send_index);
+				buffer_append_int16(m_send_buffer, (int16_t)(msg->duty * 1000.0), &send_index);
+			}
+
+			commands_send_packet(m_send_buffer, send_index);
+		} break;
+
 		case CMD_VESC_FWD:
 			timeout_reset();
 			commands_set_send_func(func);
@@ -1142,7 +1177,7 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 
 			activity = data[ind];
 			ind += 1;
-			commands_printf("Activity: %d", activity);
+			// commands_printf("Activity: %d", activity); // Borttaget: floodade USB-debugutskriften på varje spakrörelse
 
 			// Debug: Print raw int32 before conversion
 			int32_t raw_value = buffer_get_int32(data, &ind);
@@ -1154,6 +1189,7 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 			// Get actuators with the specified activity
 			int actuator_count = 0;
 			ACTUATOR* actuators = motor_get_actuators_by_activity(activity, &actuator_count);
+			commands_printf("Activity %d -> %d actuator(s)", activity, actuator_count);
 
 			if (actuators != NULL) {
 				// Process each actuator that matches the activity

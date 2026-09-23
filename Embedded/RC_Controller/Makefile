@@ -338,6 +338,10 @@ mactrac: override PROJECT = fw_mactrac
 mactrac: USE_OPT += -DMAIN_MODE=MAIN_MODE_vehicle -DIS_MACTRAC
 mactrac: touch_conf_general build/fw_mactrac.elf build/fw_mactrac.bin
 
+robant: override PROJECT = fw_robant
+robant: USE_OPT += -DMAIN_MODE=MAIN_MODE_vehicle -DUBLOX_EN=1 -DBOARD_YAW_ROT=180.0 -DHAS_HYDRAULIC_DRIVE=0 -DIS_ROBANT
+robant: touch_conf_general build/fw_robant.elf build/fw_robant.bin
+
 RULESPATH = $(CHIBIOS)/os/common/ports/ARMCMx/compilers/GCC
 include $(RULESPATH)/rules.mk
 

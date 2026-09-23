@@ -207,8 +207,9 @@ Ublox::Ublox(QObject *parent) : QObject(parent)
     mSerialPort = new QSerialPort(this);
 
     connect(mSerialPort, SIGNAL(readyRead()), this, SLOT(serialDataAvailable()));
-/*    connect(mSerialPort, SIGNAL(error(QSerialPort::SerialPortError)),
-            this, SLOT(serialPortError(QSerialPort::SerialPortError)));*/
+    // Stäng porten vid fel (t.ex. USB-bortfall) så att CarClient ser det och återansluter
+    connect(mSerialPort, &QSerialPort::errorOccurred,
+            this, &Ublox::serialPortError);
 
     // Prevent unused warnings
     (void)ubx_get_U1;

@@ -32,9 +32,6 @@ if [ -d "$DIR/Linux/Car_Client" ] && [ -d "$DIR/Embedded/RC_Controller" ]; then
 elif [ -d "$DIR/rise_sdvp/Linux/Car_Client" ] && [ -d "$DIR/rise_sdvp/Embedded/RC_Controller" ]; then
   # Skriptet körs utanför repot (standard för rcontrollstation-mappen)
   REPO_ROOT="$DIR/rise_sdvp"
-elif [ -d "$DIR/rise_sdvp/rise_sdvp/Linux/Car_Client" ] && [ -d "$DIR/rise_sdvp/rise_sdvp/Embedded/RC_Controller" ]; then
-  # Skriptet körs utanför repot med dubbla nästlade rise_sdvp-mappar
-  REPO_ROOT="$DIR/rise_sdvp/rise_sdvp"
 else
   # Källkoden saknas – vi försöker klona den!
   echo -e "${YELLOW}Källkodsmappen 'rise_sdvp' saknas på: $DIR${NC}"

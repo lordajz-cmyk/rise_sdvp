@@ -894,3 +894,10 @@ static void printf_wrapper(char *str) {
 	commands_printf(str);
 }
 
+
+// CAN-kretsens felregister (ESR): TEC/REC, senaste felkod och bus-off.
+// Används för diagnostik: TEC som växer och LEC=3 (ACK-fel) betyder att ingen
+// nod på bussen kvitterar våra ramar (fel hastighet, kabel eller strömlös VESC).
+uint32_t comm_can_get_esr(void) {
+	return CANDx.can->ESR;
+}

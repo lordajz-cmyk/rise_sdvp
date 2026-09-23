@@ -423,6 +423,12 @@ private:
     VersionChecker *m_versionChecker;
     QAction *m_checkForUpdatesAction;
     QMenu *m_helpMenu;
+    QMap<int, int> mCachedControllerActions; // Cache for database-free controller mapping
+    QMap<int, float> mCachedControllerValues; // Cache for preventing network flooding from joystick jitter
+    QMap<int, float> mLastActionValues; // Senast skickade värde per action (≠ 0), skickas om av mRcResendTimer
+    QTimer *mRcResendTimer = nullptr;
+    void rcResendTick();
+    bool gamepadAttached();
 
 private slots:
 #if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))

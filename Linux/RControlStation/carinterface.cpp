@@ -349,8 +349,8 @@ void CarInterface::setPacketInterface(PacketInterface *packetInterface)
             mPacketInterface, SLOT(setRcControlDuty(quint8,double,double)));
     connect(this, SIGNAL(setServoDirect(quint8,double)),
             mPacketInterface, SLOT(setServoDirect(quint8,double)));
-    connect(mPacketInterface, SIGNAL(nmeaRadioReceived(quint8,QByteArray)),
-            this, SLOT(nmeaReceived(quint8,QByteArray)));
+    //    connect(mPacketInterface, SIGNAL(nmeaRadioReceived(quint8,QByteArray)),
+    //            this, SLOT(nmeaReceived(quint8,QByteArray)));
     connect(mPacketInterface, SIGNAL(configurationReceived(quint8,MAIN_CONFIG)),
             this, SLOT(configurationReceived(quint8,MAIN_CONFIG)));
     connect(this, SIGNAL(ioBoardSetPwm(quint8,quint8,double)),
