@@ -230,13 +230,13 @@ fi
 echo -e "${YELLOW}${BOLD}[Steg 5/5] Konfigurerar automatisk uppstart vid boot...${NC}"
 
 START_SCRIPT="$REAL_HOME/start_car.sh"
+# Fördröjningen ligger INUTI screen så att skriptet returnerar direkt. En blockerande
+# "sleep 90" före screen fick systemd (Type=forking, standardtimeout 90 s) att ge upp
+# och markera car_client.service som misslyckad vid uppstart.
 cat <<EOF > "$START_SCRIPT"
 #!/bin/bash
-# Ge USB-portarna, modemet och VPN-tunneln 90 sekunder att vakna efter boot
-sleep 90
-
-# Startar Car_Client i en bakgrunds-screen
-screen -S car -d -m bash -c "cd '$CLIENT_DIR' && ./Car_Client -p /dev/vehicle --useudp --logusb --usetcp --tcprtcmserver 8200 --tcpubxserver 8210 --setid 4; bash"
+# Startar Car_Client i en bakgrunds-screen med en initial fördröjning inuti screen (icke-blockerande för systemd)
+screen -S car -d -m bash -c "sleep 15 && cd '$CLIENT_DIR' && ./Car_Client -p /dev/vehicle --useudp --logusb --usetcp --tcprtcmserver 8200 --tcpubxserver 8210 --setid 4; bash"
 echo "Car_Client startades i en screen-session med namnet 'car'."
 echo "För att ansluta live, kör: screen -r car"
 EOF
@@ -268,3 +268,8 @@ systemctl start car_client.service
 echo -e "${GREEN}✅ Raspberry Pi 4 konfigurerad framgångsrikt! Autostart är aktiverad!${NC}"
 echo -e "Koppla nu in dina två USB-kablar och njut av robotdriften."
 echo -e "Live-konsolen för Car_Client finns tillgänglig via: ${BOLD}screen -r car${NC}\n"
+echo -e "${YELLOW}${BOLD}⚡ Viktigt om styrkortets ström:${NC}"
+echo -e "  Styrkortet MÅSTE matas via strömplinten (GND / 7–60 V), t.ex. från 48 V-batteriet."
+echo -e "  Enbart USB/ST-Link räcker för processorn men INTE för CAN-kretsen – då når inga"
+echo -e "  kommandon motorstyrningarna (VESC). Ingen bygel på stiften EN_BAT_VIN (stänger av kortet)."
+echo -e "  RControlStation ska visa ungefär batterispänningen, inte ~2–3 V.\n"

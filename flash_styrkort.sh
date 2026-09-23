@@ -17,9 +17,11 @@
 #                                            applicerad; din firmware-mapp lämnas orörd
 #   ./flash_styrkort.sh --fw-dir MAPP        peka ut RC_Controller-mappen själv
 #                                            (eller sätt miljövariabeln RC_FW_DIR)
+#   ./flash_styrkort.sh --ja                 hoppa över FLASHA-bekräftelsen (icke-interaktivt)
 #
-# Flashningen kräver ALLTID att du skriver ordet FLASHA — det finns inget flagga
-# som hoppar över det. Bygget kan köras utan att någon hårdvara är inkopplad.
+# Flashningen kräver att du skriver ordet FLASHA, om du inte kör med --ja
+# (eller sätter miljövariabeln RC_FLASH_JA=1). Bygget kan köras utan att någon
+# hårdvara är inkopplad.
 # ==============================================================================
 
 GREEN='\e[32m'
@@ -37,6 +39,7 @@ FW_NAME=""
 PATCH_FILE=""
 BUILD_ONLY=0
 FW_DIR_ARG="${RC_FW_DIR:-}"
+AUTO_JA="${RC_FLASH_JA:-0}"
 
 usage() {
   sed -n '3,25p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
@@ -48,6 +51,7 @@ while [ $# -gt 0 ]; do
     --patch)      PATCH_FILE="$2"; shift 2 ;;
     --bara-bygg)  BUILD_ONLY=1; shift ;;
     --fw-dir)     FW_DIR_ARG="$2"; shift 2 ;;
+    --ja)         AUTO_JA=1; shift ;;
     -h|--hjalp|--help) usage; exit 0 ;;
     *) echo -e "${RED}Okänt argument: $1${NC}"; usage; exit 1 ;;
   esac
@@ -99,7 +103,11 @@ for t in $NEED_TOOLS; do
 done
 if [ -n "$MISSING" ]; then
   echo -e "${YELLOW}⚠️ Verktyg saknas på den här datorn:${BOLD}$MISSING${NC}"
-  read -p "Installera build-essential, openocd och gcc-arm-none-eabi med apt (kräver sudo)? [j/N] " ANS
+  if [ "$AUTO_JA" = "1" ]; then
+    ANS="j"
+  else
+    read -p "Installera build-essential, openocd och gcc-arm-none-eabi med apt (kräver sudo)? [j/N] " ANS
+  fi
   if [[ "$ANS" =~ ^[JjYy]$ ]]; then
     sudo apt update && sudo apt install -y build-essential openocd gcc-arm-none-eabi
   else
@@ -115,17 +123,19 @@ if [ -z "$FW_NAME" ]; then
   echo -e "\n${YELLOW}${BOLD}[Steg 1/3] Välj vilken maskin du vill bygga för:${NC}"
   echo -e " 1) ${BOLD}Drängen${NC}"
   echo -e " 2) ${BOLD}Mactrac${NC}"
-  read -p "Välj maskin (1 eller 2): " M_CHOICE
+  echo -e " 3) ${BOLD}RobAnt${NC} (VESC 28/36/76)"
+  read -p "Välj maskin (1, 2 eller 3): " M_CHOICE
   case "$M_CHOICE" in
     1) FW_NAME="drangen" ;;
     2) FW_NAME="mactrac" ;;
+    3) FW_NAME="robant" ;;
     *) echo -e "${RED}Ogiltigt val! Avbryter.${NC}"; exit 1 ;;
   esac
 else
   echo -e "\n${YELLOW}${BOLD}[Steg 1/3] Maskin: $FW_NAME${NC}"
   case "$FW_NAME" in
-    drangen|mactrac) ;;
-    *) echo -e "${RED}Okänd maskin '$FW_NAME' (drangen eller mactrac). Avbryter.${NC}"; exit 1 ;;
+    drangen|mactrac|robant) ;;
+    *) echo -e "${RED}Okänd maskin '$FW_NAME' (drangen, mactrac eller robant). Avbryter.${NC}"; exit 1 ;;
   esac
 fi
 
@@ -182,6 +192,7 @@ fi
 if [ -n "$TMP_ROOT" ]; then
   mkdir -p "$DIR/fw_out"
   cp "$BIN" "$DIR/fw_out/fw_${FW_NAME}_patchad.bin"
+  cp "${BIN%.bin}.elf" "$DIR/fw_out/fw_${FW_NAME}_patchad.elf"
   BIN="$DIR/fw_out/fw_${FW_NAME}_patchad.bin"
   echo -e "   Sparad kopia: $BIN"
 fi
@@ -215,10 +226,14 @@ echo -e "   - ${BOLD}3.3V${NC}  -> 3.3V (Strömsätter styrkortet direkt från S
 echo ""
 
 echo -e "Firmware som flashas: ${BOLD}$BIN${NC}"
-read -p "Skriv ordet FLASHA för att programmera kortet (allt annat avbryter): " CONFIRM
-if [ "$CONFIRM" != "FLASHA" ]; then
-  echo -e "${YELLOW}Avbrutet — ingenting flashades.${NC}"
-  exit 0
+if [ "$AUTO_JA" = "1" ]; then
+  echo -e "${YELLOW}--ja angiven: hoppar över FLASHA-bekräftelsen och flashar direkt.${NC}"
+else
+  read -p "Skriv ordet FLASHA för att programmera kortet (allt annat avbryter): " CONFIRM
+  if [ "$CONFIRM" != "FLASHA" ]; then
+    echo -e "${YELLOW}Avbrutet — ingenting flashades.${NC}"
+    exit 0
+  fi
 fi
 
 # Kontrollera om ST-LINK syns på USB-bussen
@@ -229,11 +244,21 @@ fi
 
 echo -e "\n${BOLD}Startar flashning via OpenOCD...${NC}"
 
-# (Flashkommandot är oförändrat från originalskriptet.)
-if [ "$EUID" -ne 0 ]; then
-  sudo openocd -f board/stm32f4discovery.cfg -c "reset_config trst_only combined" -c "program $BIN verify reset exit 0x08000000"
+# Flasha ELF-filen, inte .bin: .bin täcker hela 0x08000000–slutet, inklusive
+# EEPROM-emuleringen på 0x08004000–0x0800BFFF (se eeprom.h), så varje flashning
+# nollställde robotens sparade inställningar (aktuatorer, ID m.m.). ELF-filen
+# skriver bara sektorerna som programmet faktiskt ligger i och låter EEPROM vara.
+ELF="${BIN%.bin}.elf"
+if [ -f "$ELF" ]; then
+  PROG_CMD="program $ELF verify reset exit"
 else
-  openocd -f board/stm32f4discovery.cfg -c "reset_config trst_only combined" -c "program $BIN verify reset exit 0x08000000"
+  echo -e "${YELLOW}⚠️ Hittade ingen ELF-fil ($ELF) — flashar .bin, vilket RADERAR sparade inställningar på styrkortet.${NC}"
+  PROG_CMD="program $BIN verify reset exit 0x08000000"
+fi
+if [ "$EUID" -ne 0 ]; then
+  sudo openocd -f board/stm32f4discovery.cfg -c "reset_config trst_only combined" -c "$PROG_CMD"
+else
+  openocd -f board/stm32f4discovery.cfg -c "reset_config trst_only combined" -c "$PROG_CMD"
 fi
 
 if [ $? -eq 0 ]; then
@@ -248,8 +273,13 @@ fi
 # ------------------------------------------------------------------------------
 # 🔬 STEG 3: Interaktivt skrivbordstest (Live-diagnostik)
 # ------------------------------------------------------------------------------
-echo -e "\n${YELLOW}${BOLD}[Steg 3/3] Vill du köra ett direkt skrivbordstest via USB nu? (y/n)${NC}"
-read -p "Köra diagnostiktest? (y/n): " RUN_DIAG
+if [ "$AUTO_JA" = "1" ]; then
+  RUN_DIAG="n"
+  echo -e "\n${YELLOW}${BOLD}[Steg 3/3] --ja angiven: hoppar över det interaktiva skrivbordstestet.${NC}"
+else
+  echo -e "\n${YELLOW}${BOLD}[Steg 3/3] Vill du köra ett direkt skrivbordstest via USB nu? (y/n)${NC}"
+  read -p "Köra diagnostiktest? (y/n): " RUN_DIAG
+fi
 
 if [[ "$RUN_DIAG" =~ ^[Yy]$ ]] || [[ -z "$RUN_DIAG" ]]; then
   echo -e "\n${BLUE}${BOLD}Instruktioner för skrivbordstest:${NC}"

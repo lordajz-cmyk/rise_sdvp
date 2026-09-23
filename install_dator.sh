@@ -138,6 +138,16 @@ if [[ "$RUN_BUILD" =~ ^[Yy]$ ]] || [[ -z "$RUN_BUILD" ]]; then
     echo -e "\nGår till källkodsmappen: $STATION_DIR"
     chmod +x "$STATION_DIR/build_cmake_linux.sh"
     
+    # RControlStation läser i första hand data.db bredvid programfilen (build/.../lin/data.db).
+    # Där ligger bl.a. dosa-bindningarna, så spara den innan byggmappen rensas.
+    BIN_DIR="$STATION_DIR/build/cmake_linux/build/lin"
+    DB_BACKUP=""
+    if [ -f "$BIN_DIR/data.db" ]; then
+      DB_BACKUP=$(mktemp /tmp/rcontrolstation_data.XXXXXX.db)
+      cp "$BIN_DIR/data.db" "$DB_BACKUP"
+      echo -e "Sparade databasen (dosa-bindningar m.m.) inför ombygget."
+    fi
+
     # Självläkning: Ta bort gammal CMake-cache om den finns (vanligt vid kopiering mellan olika användare/maskiner)
     if [ -d "$STATION_DIR/build" ]; then
       echo -e "${YELLOW}⚠️ Upptäckte en gammal byggmapp (beror ofta på kopiering mellan datorer).${NC}"
@@ -150,6 +160,26 @@ if [[ "$RUN_BUILD" =~ ^[Yy]$ ]] || [[ -z "$RUN_BUILD" ]]; then
     sudo -u "$REAL_USER" bash -c "cd '$STATION_DIR' && ./build_cmake_linux.sh release"
     
     if [ $? -eq 0 ]; then
+      # Lägg databasen bredvid programfilen. Utan den skapar RControlStation en TOM
+      # databas (tomma dosa-listor m.m.) om programmet startas utanför projektmappen.
+      if [ -n "$DB_BACKUP" ]; then
+        cp "$DB_BACKUP" "$BIN_DIR/data.db" && rm -f "$DB_BACKUP"
+        echo -e "${GREEN}✅ Databasen återställd bredvid programfilen.${NC}"
+      else
+        for CAND in "$DIR/data.db" "$DIR/rise_sdvp/data.db" "$DIR/web/data.db" "$DIR/rise_sdvp/web/data.db"; do
+          if [ -f "$CAND" ]; then
+            cp "$CAND" "$BIN_DIR/data.db"
+            echo -e "${GREEN}✅ Databas kopierad bredvid programfilen från: $CAND${NC}"
+            break
+          fi
+        done
+        if [ ! -f "$BIN_DIR/data.db" ]; then
+          echo -e "${YELLOW}⚠️ Hittade ingen data.db att kopiera. Lägg projektets data.db i:${NC}"
+          echo -e "   ${BOLD}$BIN_DIR/${NC}"
+        fi
+      fi
+      chown "$REAL_USER:$REAL_USER" "$BIN_DIR/data.db" 2>/dev/null
+
       # Skapa en global symlänk så att programmet kan startas var som helst ifrån
       ln -sf "$STATION_DIR/build/cmake_linux/build/lin/RControlStation" /usr/local/bin/RControlStation
       
