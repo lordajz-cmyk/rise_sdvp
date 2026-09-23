@@ -328,6 +328,16 @@ MainWindow::MainWindow(QWidget *parent) :
     connect(mJoystickPollTimer, &QTimer::timeout, this, &MainWindow::checkJoystickConnection);
     mJoystickPollTimer->start(5000); // Check every 5 seconds
 
+    // Styrkortet kan byta ENU-referens (t.ex. till basstationen när RTCM 1005 kommer),
+    // så hämta den regelbundet så att kartan och bilen räknar från samma nollpunkt.
+    QTimer *enuSyncTimer = new QTimer(this);
+    connect(enuSyncTimer, &QTimer::timeout, this, [this]() {
+        if (mTcpClientMulti->isAnyConnected() && !ui->mapStreamNmeaZeroEnuBox->isChecked()) {
+            mPacketInterface->getEnuRef(mActiveCarId);
+        }
+    });
+    enuSyncTimer->start(10000);
+
     // Skicka om aktiva reglagevärden, och nödstoppa om dosan försvinner
     mRcResendTimer = new QTimer(this);
     connect(mRcResendTimer, &QTimer::timeout, this, &MainWindow::rcResendTick);
@@ -2383,7 +2393,13 @@ void MainWindow::pingError(QString msg, QString error)
 
 void MainWindow::enuRx(quint8 id, double lat, double lon, double height)
 {
-    (void)id;
+    double cur[3];
+    ui->mapLiveWidget->getEnuRef(cur);
+    if (cur[0] != lat || cur[1] != lon || cur[2] != height) {
+        qDebug().noquote() << QString("ENU-ref från bil %1: %2, %3, %4 (kartan hade %5, %6, %7)")
+                              .arg(id).arg(lat, 0, 'f', 8).arg(lon, 0, 'f', 8).arg(height, 0, 'f', 2)
+                              .arg(cur[0], 0, 'f', 8).arg(cur[1], 0, 'f', 8).arg(cur[2], 0, 'f', 2);
+    }
     ui->mapLiveWidget->setEnuRef(lat, lon, height);
     ui->mapWidgetAnalysisResult->setEnuRef(lat, lon, height);
 }
@@ -5163,7 +5179,11 @@ void MainWindow::on_tcpConnectButton_clicked()
         ui->mapCarBox->setValue(car_id); // Automatically select and highlight the connected car on the map!
         ui->mapFollowBox->setChecked(false); // Do not follow ENU car (which can be uninitialized at 0,0) by default
         ui->mapStreamNmeaFollowBox->setChecked(false); // Let the user toggle high-precision GPS tracking manually to prevent GUI thread congestion
-        ui->mapStreamNmeaZeroEnuBox->setChecked(true); // Automatically zero/align the ENU reference on the first received RTK coordinate!
+        // Kartan ska använda styrkortets ENU-referens, inte den första RTK-punkten.
+        // Annars räknar kartan och styrkortet från olika nollpunkter och bilen
+        // (blå/rosa) hamnar förskjuten mot RTK-punkterna (grön/gul).
+        ui->mapStreamNmeaZeroEnuBox->setChecked(false);
+        mPacketInterface->getEnuRef(car_id);
 
         // Automatically connect to port 2948 NMEA stream (rtkrcv) for real-time RTK satellites and age updates!
         ui->mapStreamNmeaServerEdit->setText(ipPort.at(0));
