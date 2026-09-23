@@ -421,6 +421,10 @@ void PacketInterface::processPacket(const unsigned char *data, int len)
 
         // Car commands
     case CMD_GET_STATE: {
+        if (mStateReqPending) {
+            mLastStateRttMs = (int)mStateReqTimer.elapsed();
+            mStateReqPending = false;
+        }
         CAR_STATE state;
         int32_t ind = 0;
 
@@ -1183,6 +1187,13 @@ bool PacketInterface::sendMoteUbxBase(int mode,
 
 void PacketInterface::getState(quint8 id)
 {
+    // Mät svarstiden program -> Pi -> styrkort -> tillbaka. En mätning åt gången;
+    // ett svar som aldrig kommer glöms efter 2 s.
+    if (!mStateReqPending || mStateReqTimer.elapsed() > 2000) {
+        mStateReqTimer.start();
+        mStateReqPending = true;
+    }
+
     QByteArray packet;
     packet.append(id);
     packet.append(CMD_GET_STATE);

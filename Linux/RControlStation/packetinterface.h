@@ -20,6 +20,7 @@
 
 #include <QObject>
 #include <QTimer>
+#include <QElapsedTimer>
 #include <QVector>
 #include <QUdpSocket>
 #include <QImage>
@@ -126,11 +127,18 @@ public slots:
     void hydraulicMove(quint8 id, HYDRAULIC_POS pos, HYDRAULIC_MOVE move);
     void setApMode(quint8 id, AP_MODE mode);
 
+public:
+    // Senaste svarstid (ms) från CMD_GET_STATE till svar, -1 om ingen mätning än
+    int lastStateRttMs() const { return mLastStateRttMs; }
+
 private:
     unsigned short crc16(const unsigned char *buf, unsigned int len);
     bool waitSignal(QObject *sender, const char *signal, int timeoutMs);
 
     QTimer *mTimer;
+    QElapsedTimer mStateReqTimer;
+    bool mStateReqPending = false;
+    int mLastStateRttMs = -1;
     quint8 *mSendBuffer;
     QUdpSocket *mUdpSocket;
     QHostAddress mHostAddress;

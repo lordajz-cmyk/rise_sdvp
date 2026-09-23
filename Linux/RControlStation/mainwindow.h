@@ -19,6 +19,8 @@
 #define MAINWINDOW_H
 
 #include <QMainWindow>
+#include <QElapsedTimer>
+#include <QLabel>
 #include <QtWidgets>
 #include <QItemSelection>
 #include <QList>
@@ -425,6 +427,12 @@ private:
     QMenu *m_helpMenu;
     QMap<int, int> mCachedControllerActions; // Cache for database-free controller mapping
     QMap<int, float> mCachedControllerValues; // Cache for preventing network flooding from joystick jitter
+    QLabel *mStatusBoxLabel = nullptr;      // Statusruta under anslutningslistan
+    NmeaServer::nmea_gga_info_t mLastGga;
+    bool mHaveGga = false;
+    QElapsedTimer mGgaAge;                  // Tid sedan senaste GGA från RTK-strömmen
+    QElapsedTimer mStateAge;                // Tid sedan senaste statuspaket från bilen
+    void updateStatusBox();
     QMap<int, float> mLastActionValues; // Senast skickade värde per action (≠ 0), skickas om av mRcResendTimer
     QTimer *mRcResendTimer = nullptr;
     void rcResendTick();

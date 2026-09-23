@@ -25,6 +25,8 @@
 #include <algorithm>
 #include <QMessageBox>
 #include <QPointer>
+#include <QGroupBox>
+#include <QVBoxLayout>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QHostInfo>
@@ -327,6 +329,24 @@ MainWindow::MainWindow(QWidget *parent) :
     mJoystickPollTimer = new QTimer(this);
     connect(mJoystickPollTimer, &QTimer::timeout, this, &MainWindow::checkJoystickConnection);
     mJoystickPollTimer->start(5000); // Check every 5 seconds
+
+    // Statusruta i sidopanelen (i det tomma området under anslutningsknapparna)
+    {
+        QGroupBox *statusBox = new QGroupBox("Status", this);
+        QVBoxLayout *statusLayout = new QVBoxLayout(statusBox);
+        statusLayout->setContentsMargins(6, 4, 6, 4);
+        mStatusBoxLabel = new QLabel(statusBox);
+        mStatusBoxLabel->setTextFormat(Qt::RichText);
+        mStatusBoxLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+        statusLayout->addWidget(mStatusBoxLabel);
+        int idx = ui->verticalLayout->indexOf(ui->verticalSpacer);
+        ui->verticalLayout->insertWidget(idx < 0 ? 3 : idx, statusBox);
+
+        QTimer *statusTimer = new QTimer(this);
+        connect(statusTimer, &QTimer::timeout, this, &MainWindow::updateStatusBox);
+        statusTimer->start(500); // Första uppdateringen först när konstruktorn är klar (mTcpClientMulti skapas senare)
+        mStatusBoxLabel->setText("<b>Lösning:</b> –<br><b>Ping (bil):</b> –");
+    }
 
     // Styrkortet kan byta ENU-referens (t.ex. till basstationen när RTCM 1005 kommer),
     // så hämta den regelbundet så att kartan och bilen räknar från samma nollpunkt.
@@ -2248,6 +2268,51 @@ bool MainWindow::JSconnected()
     #endif
 };
 #endif
+void MainWindow::updateStatusBox()
+{
+    if (!mStatusBoxLabel) {
+        return;
+    }
+
+    QString gps;
+    if (!mHaveGga || mGgaAge.elapsed() > 3000) {
+        gps = "<b>Lösning:</b> <span style='color:#c00'>ingen GPS-data</span>";
+    } else {
+        QString sol;
+        QString col;
+        switch (mLastGga.fix_type) {
+        case 4: sol = "RTK fix"; col = "#080"; break;
+        case 5: sol = "RTK float"; col = "#c70"; break;
+        case 2: sol = "DGPS"; col = "#c70"; break;
+        case 1: sol = "SPP"; col = "#c00"; break;
+        case 6: sol = "Dead reckoning"; col = "#c00"; break;
+        default: sol = "Ingen fix"; col = "#c00"; break;
+        }
+        bool rtk = (mLastGga.fix_type == 4 || mLastGga.fix_type == 5);
+        gps = QString("<b>Lösning:</b> <span style='color:%1'><b>%2</b></span><br>"
+                      "<b>Satelliter:</b> %3 (RTK: %4)<br>"
+                      "<b>Korr. ålder:</b> %5")
+                .arg(col, sol)
+                .arg(mLastGga.n_sat)
+                .arg(rtk ? mLastGga.n_sat : 0)
+                .arg(mLastGga.diff_age > 0.0 ? QString::number(mLastGga.diff_age, 'f', 1) + " s" : QString("–"));
+    }
+
+    QString link;
+    if (!mTcpClientMulti->isAnyConnected()) {
+        link = "<b>Ping (bil):</b> <span style='color:#c00'>ej ansluten</span>";
+    } else if (!mStateAge.isValid() || mStateAge.elapsed() > 3000) {
+        link = "<b>Ping (bil):</b> <span style='color:#c00'>inget svar</span>";
+    } else {
+        int rtt = mPacketInterface->lastStateRttMs();
+        QString col = rtt < 0 ? "#000" : (rtt < 150 ? "#080" : (rtt < 500 ? "#c70" : "#c00"));
+        link = QString("<b>Ping (bil):</b> <span style='color:%1'>%2</span>")
+                .arg(col, rtt < 0 ? QString("–") : QString::number(rtt) + " ms");
+    }
+
+    mStatusBoxLabel->setText(gps + "<br>" + link);
+}
+
 bool MainWindow::gamepadAttached()
 {
 #if defined(HAS_JOYSTICK_CHECK) && (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
@@ -2316,6 +2381,7 @@ void MainWindow::packetDataToSend(QByteArray &data)
 
 void MainWindow::stateReceived(quint8 id, CAR_STATE state)
 {
+    mStateAge.restart();
 
     if (!mSupportedFirmwares.contains(qMakePair(static_cast<int>(state.fw_major), static_cast<int>(state.fw_minor)))) {
         on_disconnectButton_clicked();
@@ -2406,6 +2472,12 @@ void MainWindow::enuRx(quint8 id, double lat, double lon, double height)
 
 void MainWindow::nmeaGgaRx(int fields, NmeaServer::nmea_gga_info_t gga)
 {
+    if (fields >= 5) {
+        mLastGga = gga;
+        mHaveGga = true;
+        mGgaAge.restart();
+    }
+
     if (fields >= 5) {
         if (gga.fix_type == 4 || gga.fix_type == 5 || gga.fix_type == 2 ||
                 (gga.fix_type == 1 && !ui->mapStreamNmeaRtkOnlyBox->isChecked())) {
