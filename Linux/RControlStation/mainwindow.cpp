@@ -526,6 +526,9 @@ MainWindow::MainWindow(QWidget *parent) :
     ui->mainTabWidget->removeTab(6);
     ui->mainTabWidget->removeTab(5);
     ui->mainTabWidget->removeTab(4);
+    // Öppna på kartan (i .ui var Farm vald). Valt via fliken, inte index, eftersom
+    // flikar läggs till och tas bort ovan.
+    ui->mainTabWidget->setCurrentWidget(ui->tabMap);
     if (!QSqlDatabase::drivers().contains("QSQLITE"))
             QMessageBox::critical(
                 this,
