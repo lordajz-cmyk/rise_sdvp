@@ -2573,9 +2573,9 @@ void MainWindow::applyAutoEnuRef(double lat, double lon, double height)
     mPacketInterface->setEnuRef(car, llh);
     mPacketInterface->getEnuRef(car); // svaret (enuRx) bekräftar att kartan och bilen är i takt
 
-    // Roboten står i nollpunkten: centrera, ca 100 m i bild, och följ bilen.
+    // Roboten står i nollpunkten: centrera, ca 50 m i bild, och följ bilen.
     double w = qMax(1, ui->mapLiveWidget->width());
-    ui->mapLiveWidget->setScaleFactor(w / (100.0 * 1000.0));
+    ui->mapLiveWidget->setScaleFactor(w / (50.0 * 1000.0));
     ui->mapLiveWidget->moveView(0.0, 0.0);
     ui->mapStreamNmeaFollowBox->setChecked(false);
     ui->mapFollowBox->setChecked(true);
