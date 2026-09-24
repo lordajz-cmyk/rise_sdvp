@@ -430,6 +430,11 @@ private:
     QLabel *mStatusBoxLabel = nullptr;      // Statusruta under anslutningslistan
     NmeaServer::nmea_gga_info_t mLastGga;
     bool mHaveGga = false;
+    // Nollpunkt vid anslutning: sätts på robotens första GPS-position (nmeaGgaRx),
+    // så att kartan visar rätt var man än är, utan att välja gård först.
+    bool mAutoEnuRefPending = false;
+    void applyAutoEnuRef(double lat, double lon, double height);
+    void saveMapPosition(double lat, double lon);
     QElapsedTimer mGgaAge;                  // Tid sedan senaste GGA från RTK-strömmen
     QElapsedTimer mStateAge;                // Tid sedan senaste statuspaket från bilen
     void updateStatusBox();

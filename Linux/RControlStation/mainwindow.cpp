@@ -51,6 +51,7 @@
 #include <QUrl>
 #include <QUrlQuery>
 #include <QTimer>
+#include <QSettings>
 #include <QLoggingCategory>
 #include <QtSql>
 #include <QtCharts>
@@ -353,6 +354,19 @@ MainWindow::MainWindow(QWidget *parent) :
 
         statusTimer->start(500); // Första uppdateringen först när konstruktorn är klar (mTcpClientMulti skapas senare)
         mStatusBoxLabel->setText("<b>Lösning:</b> –<br><b>Ping (bil):</b> –");
+    }
+
+    // Kartan börjar där man var senast (sparas när nollpunkten sätts eller en gård
+    // väljs), i stället för den inbyggda startpunkten i Uppsala.
+    {
+        QSettings s("RControlStation", "karta");
+        if (s.contains("senasteLat") && s.contains("senasteLon")) {
+            double lat = s.value("senasteLat").toDouble();
+            double lon = s.value("senasteLon").toDouble();
+            ui->mapLiveWidget->setEnuRef(lat, lon, 0);
+            ui->mapLiveWidget->moveView(0.0, 0.0);
+            qDebug() << "Kartan startar på senaste position:" << lat << lon;
+        }
     }
 
     // Styrkortet kan byta ENU-referens (t.ex. till basstationen när RTCM 1005 kommer),
@@ -1754,6 +1768,11 @@ void MainWindow::onSelectedFarm(const QModelIndex& current, const QModelIndex& p
     mPacketInterface->setEnuRef(ui->mapCarBox->value(), llh);
 //    setEnuRef(quint8 id, double *llh, int retries)
 
+    // Ett eget gårdsval gäller fram till nästa anslutning: avbryt den automatiska
+    // nollpunkten om GPS-positionen inte hunnit komma, och kom ihåg platsen.
+    mAutoEnuRefPending = false;
+    saveMapPosition(llh[0], llh[1]);
+
     ui->mapWidgetFields->clearAllFields();
     ui->mapWidgetFields->clearAllPaths();
     qDebug() << "Fields (onSelectedFarm 1): " << ui->mapWidgetFields->mFields->size();
@@ -2539,12 +2558,52 @@ void MainWindow::enuRx(quint8 id, double lat, double lon, double height)
     ui->mapWidgetAnalysisResult->setEnuRef(lat, lon, height);
 }
 
+void MainWindow::applyAutoEnuRef(double lat, double lon, double height)
+{
+    int car = ui->mapCarBox->value();
+    double llh[3] = {lat, lon, height};
+    qDebug().noquote() << QString("Nollpunkt satt där roboten står: %1, %2, %3 (bil %4)")
+                          .arg(lat, 0, 'f', 8).arg(lon, 0, 'f', 8).arg(height, 0, 'f', 2).arg(car);
+
+    // Samma som ett gårdsval, men med robotens egen position.
+    ui->mapLiveWidget->setEnuRef(lat, lon, height);
+    ui->mapWidgetFields->setEnuRef(lat, lon, height);
+    ui->mapWidgetAnalysis->setEnuRef(lat, lon, height);
+    ui->mapWidgetAnalysisResult->setEnuRef(lat, lon, height);
+    mPacketInterface->setEnuRef(car, llh);
+    mPacketInterface->getEnuRef(car); // svaret (enuRx) bekräftar att kartan och bilen är i takt
+
+    // Roboten står i nollpunkten: centrera, ca 100 m i bild, och följ bilen.
+    double w = qMax(1, ui->mapLiveWidget->width());
+    ui->mapLiveWidget->setScaleFactor(w / (100.0 * 1000.0));
+    ui->mapLiveWidget->moveView(0.0, 0.0);
+    ui->mapStreamNmeaFollowBox->setChecked(false);
+    ui->mapFollowBox->setChecked(true);
+    ui->mapLiveWidget->setFollowCar(car);
+
+    saveMapPosition(lat, lon);
+}
+
+void MainWindow::saveMapPosition(double lat, double lon)
+{
+    QSettings s("RControlStation", "karta");
+    s.setValue("senasteLat", lat);
+    s.setValue("senasteLon", lon);
+}
+
 void MainWindow::nmeaGgaRx(int fields, NmeaServer::nmea_gga_info_t gga)
 {
     if (fields >= 5) {
         mLastGga = gga;
         mHaveGga = true;
         mGgaAge.restart();
+    }
+
+    // Första GPS-positionen efter anslutning (även SPP): nollpunkt där roboten står.
+    if (mAutoEnuRefPending && fields >= 5 &&
+            (gga.fix_type == 1 || gga.fix_type == 2 || gga.fix_type == 4 || gga.fix_type == 5)) {
+        mAutoEnuRefPending = false;
+        applyAutoEnuRef(gga.lat, gga.lon, gga.height);
     }
 
     if (fields >= 5) {
@@ -5331,6 +5390,13 @@ void MainWindow::on_tcpConnectButton_clicked()
         ui->mapStreamNmeaPortBox->setValue(2948);
         mNmea->connectClientTcp(ipPort.at(0), 2948);
         mConnectedIp = ipPort.at(0);
+    }
+
+    // Nollpunkten sätts där roboten står så fort första GPS-positionen kommer
+    // från rtkrcv (se nmeaGgaRx), vid varje anslutning.
+    mAutoEnuRefPending = !connectIpText.isEmpty();
+    if (mAutoEnuRefPending) {
+        qDebug() << "Väntar på robotens GPS-position för att sätta kartans nollpunkt...";
     }
 }
 
