@@ -176,8 +176,8 @@ if [[ "$RUN_BUILD" =~ ^[Yy]$ ]] || [[ -z "$RUN_BUILD" ]]; then
           fi
         done
         if [ ! -f "$BIN_DIR/data.db" ]; then
-          echo -e "${YELLOW}⚠️ Hittade ingen data.db att kopiera. Lägg projektets data.db i:${NC}"
-          echo -e "   ${BOLD}$BIN_DIR/${NC}"
+          echo -e "Ingen tidigare databas hittades. Det är normalt vid en ny installation:"
+          echo -e "RControlStation skapar en ny vid första starten, med dosan förinställd."
         fi
       fi
       chown "$REAL_USER:$REAL_USER" "$BIN_DIR/data.db" 2>/dev/null
