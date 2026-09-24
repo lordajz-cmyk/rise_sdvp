@@ -54,7 +54,9 @@ fi
 echo -e "\n${YELLOW}${BOLD}Installerar systempaket och utvecklingstillägg...${NC}"
 echo -e "Detta inkluderar Qt6, GDAL (för kartor), SDL2 (för spelkontroll/joystick) samt matematiska bibliotek."
 
-# Säkerställ att universe-arkivet är aktiverat (krävs för GDAL och vissa Qt6-paket i Ubuntu)
+# Säkerställ att universe-arkivet är aktiverat (krävs för GDAL och vissa Qt6-paket i Ubuntu).
+# add-apt-repository finns i software-properties-common, som saknas på minimala installationer.
+command -v add-apt-repository >/dev/null 2>&1 || { apt update; apt install -y software-properties-common; }
 add-apt-repository -y universe
 
 apt update
@@ -191,9 +193,9 @@ if [[ "$RUN_BUILD" =~ ^[Yy]$ ]] || [[ -z "$RUN_BUILD" ]]; then
       echo -e "Programmet finns sparat på följande sökväg:"
       echo -e "  ${BOLD}$STATION_DIR/build/cmake_linux/build/lin/RControlStation${NC}"
       echo -e ""
-      echo -e "💡 ${BOLD}Hur du startar programmet på din dator:${NC}"
-      echo -e "  Gå till mappen och kör programmet:"
-      echo -e "    ${BOLD}cd '$STATION_DIR/build/cmake_linux/build/lin' && ./RControlStation${NC}"
+      echo -e "💡 ${BOLD}Starta programmet:${NC} skriv ${BOLD}RControlStation${NC} i valfri terminal."
+      echo -e "   Första gången skapas en ny databas med dosan förinställd:"
+      echo -e "   vänster spak upp/ner = Speed Control, höger spak åt sidan = Steering Control."
       echo -e "======================================================================"
     else
       echo -e "${RED}❌ Kompileringsfel uppstod under bygget av RControlStation. Se loggarna ovan.${NC}"

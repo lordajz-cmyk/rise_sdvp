@@ -255,6 +255,13 @@ void database::ensureControllersTableExists()
         }
         
         qDebug() << "Controllers table created successfully.";
+
+        // Standardbindningar för en ny databas, samma som på RobAnt: vänster spak
+        // upp/ner (5) = Speed Control (10), höger spak sidled (8) = Steering Control (11).
+        // Aktivitetsnumren måste stämma med styrkortets aktuatorer (och robotd).
+        QSqlQuery ins(db);
+        ins.exec("INSERT INTO controllers (id, name, action) VALUES (5, NULL, 10)");
+        ins.exec("INSERT INTO controllers (id, name, action) VALUES (8, NULL, 11)");
     }
 }
 
@@ -593,10 +600,16 @@ void database::insertDefaultControls()
     };
     
     QSqlQuery query(db);
-    query.prepare("INSERT INTO controls (name, type, target_value, is_active, colour, pid_kp, pid_ki, pid_kd, pid_output_min, pid_output_max, logical_operation) "
-                  "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+    // Fasta id 7–12, samma som i befintliga databaser: id:t skickas som aktivitet
+    // till styrkortet (CMD_RC_CONTROL_ADV), och styrkortets aktuatorer och robotd
+    // använder Speed Control = 10 och Steering Control = 11. Med AUTOINCREMENT
+    // blev de 4 och 5 i en ny databas, och då rörde sig ingenting.
+    const int firstId = 7;
+    query.prepare("INSERT INTO controls (id, name, type, target_value, is_active, colour, pid_kp, pid_ki, pid_kd, pid_output_min, pid_output_max, logical_operation) "
+                  "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
     
     for (int i = 0; i < defaultControls.size(); i++) {
+        query.addBindValue(firstId + i);
         query.addBindValue(defaultControls[i].first);
         query.addBindValue(defaultControls[i].second);
         
