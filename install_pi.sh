@@ -279,7 +279,7 @@ systemctl daemon-reload
 systemctl enable car_client.service
 systemctl start car_client.service
 
-echo -e "${GREEN}✅ Raspberry Pi 4 konfigurerad framgångsrikt! Autostart är aktiverad!${NC}"
+echo -e "${GREEN}✅ Raspberry Pi konfigurerad framgångsrikt! Autostart är aktiverad!${NC}"
 echo -e "Koppla nu in dina två USB-kablar och njut av robotdriften."
 echo -e "Live-konsolen för Car_Client finns tillgänglig via: ${BOLD}screen -r car${NC}\n"
 echo -e "${YELLOW}${BOLD}⚡ Viktigt om styrkortets ström:${NC}"
