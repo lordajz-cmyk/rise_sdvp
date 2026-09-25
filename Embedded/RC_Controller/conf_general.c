@@ -334,7 +334,6 @@ void conf_general_read_main_conf(MAIN_CONFIG *conf) {
  * A pointer to the configuration that should be stored.
  */
 bool conf_general_store_main_config(MAIN_CONFIG *conf) {
-	utils_sys_lock_cnt();
 //	RCC_APB1PeriphClockCmd(RCC_APB1Periph_WWDG, DISABLE);
 
 	bool is_ok = true;
@@ -344,18 +343,26 @@ bool conf_general_store_main_config(MAIN_CONFIG *conf) {
 	FLASH_ClearFlag(FLASH_FLAG_OPERR | FLASH_FLAG_WRPERR | FLASH_FLAG_PGAERR |
 			FLASH_FLAG_PGPERR | FLASH_FLAG_PGSERR);
 
+	// Låset tas per variabel istället för runt hela loopen. MAIN_CONFIG är stor
+	// (100+ variabler), och med ett enda lås runt hela loopen stod USB:ns avbrott
+	// (och därmed all seriekommunikation) stilla i flera hundra ms i ett svep,
+	// vilket fick Car_Client:s skrivning att slå i sin timeout ("Write timeout on
+	// serial port"). Nu släpps låset mellan varje variabel så USB hinner andas.
 	for (unsigned int i = 0;i < (sizeof(MAIN_CONFIG) / 2);i++) {
 		var = (conf_addr[2 * i] << 8) & 0xFF00;
 		var |= conf_addr[2 * i + 1] & 0xFF;
 
-		if (EE_WriteVariable(EEPROM_BASE_MAINCONF + i, var) != FLASH_COMPLETE) {
+		utils_sys_lock_cnt();
+		bool write_ok = (EE_WriteVariable(EEPROM_BASE_MAINCONF + i, var) == FLASH_COMPLETE);
+		utils_sys_unlock_cnt();
+
+		if (!write_ok) {
 			is_ok = false;
 			break;
 		}
 	}
 
 //	RCC_APB1PeriphClockCmd(RCC_APB1Periph_WWDG, ENABLE);
-	utils_sys_unlock_cnt();
 
 	return is_ok;
 }
