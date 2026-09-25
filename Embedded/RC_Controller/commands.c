@@ -22,6 +22,7 @@
 #include "pos.h"
 #include "buffer.h"
 #include "terminal.h"
+#include "bldc_interface.h"
 #include "motor_control.h"
 #include "servo_simple.h"
 #include "utils.h"

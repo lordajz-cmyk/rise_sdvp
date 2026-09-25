@@ -23,6 +23,9 @@
 #include "conf_general.h"
 #include "autopilot.h"
 #include "steering_control.h"
+#include "servo_simple.h"
+#include "commands.h"
+#include "comm_can.h"
 //#include "watchdog.h"
 
 // Current motor direction: +1 (forward) or -1 (backward)

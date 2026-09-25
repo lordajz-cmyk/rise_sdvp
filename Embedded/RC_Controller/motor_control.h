@@ -34,7 +34,7 @@ void motor_diff_rpms(float *rpm_r, float *rpm_l, float speed, float m_turn_rad_n
 void motor_set_mode(int _mode);
 void motor_control_init(void);
 
-#ifndef HAS_HYDRAULIC_DRIVE
+#if !defined(HAS_HYDRAULIC_DRIVE) || !HAS_HYDRAULIC_DRIVE
 void motor_diff_control(float throttle, float steering);
 void motor_steering_control(float throttle, float steering,float  frontangle);
 #endif
