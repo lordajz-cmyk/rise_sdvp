@@ -207,8 +207,9 @@ Ublox::Ublox(QObject *parent) : QObject(parent)
     mSerialPort = new QSerialPort(this);
 
     connect(mSerialPort, SIGNAL(readyRead()), this, SLOT(serialDataAvailable()));
-/*    connect(mSerialPort, SIGNAL(error(QSerialPort::SerialPortError)),
-            this, SLOT(serialPortError(QSerialPort::SerialPortError)));*/
+    // Stäng porten vid fel (t.ex. USB-bortfall) så att CarClient ser det och återansluter
+    connect(mSerialPort, &QSerialPort::errorOccurred,
+            this, &Ublox::serialPortError);
 
     // Prevent unused warnings
     (void)ubx_get_U1;
@@ -410,12 +411,23 @@ bool Ublox::ubxCfgMsg(uint8_t msg_class, uint8_t id, uint8_t rate)
 
     ubx_put_U1(buffer, &ind, msg_class);
     ubx_put_U1(buffer, &ind, id);
-    ubx_put_U1(buffer, &ind, rate);
-    ubx_put_U1(buffer, &ind, rate);
-    ubx_put_U1(buffer, &ind, rate);
-    ubx_put_U1(buffer, &ind, rate);
-    ubx_put_U1(buffer, &ind, rate);
-    ubx_put_U1(buffer, &ind, rate);
+
+    // Disable raw measurements (RAWX, SFRBX) on UART1/UART2 to prevent STM32 buffer flood and lockup, only send to USB (Pi)
+    if (msg_class == UBX_CLASS_RXM && (id == UBX_RXM_RAWX || id == UBX_RXM_SFRBX)) {
+        ubx_put_U1(buffer, &ind, 0);    // I2C
+        ubx_put_U1(buffer, &ind, 0);    // UART1
+        ubx_put_U1(buffer, &ind, 0);    // UART2
+        ubx_put_U1(buffer, &ind, rate); // USB (Pi)
+        ubx_put_U1(buffer, &ind, 0);    // SPI
+        ubx_put_U1(buffer, &ind, 0);    // Reserved
+    } else {
+        ubx_put_U1(buffer, &ind, rate);
+        ubx_put_U1(buffer, &ind, rate);
+        ubx_put_U1(buffer, &ind, rate);
+        ubx_put_U1(buffer, &ind, rate);
+        ubx_put_U1(buffer, &ind, rate);
+        ubx_put_U1(buffer, &ind, rate);
+    }
 
     return ubx_encode_send(UBX_CLASS_CFG, UBX_CFG_MSG, buffer, ind, 10);
 }
@@ -589,11 +601,17 @@ void Ublox::serialDataAvailable()
                     mDecoderState.ubx_pos++;
                 } else if (mDecoderState.ubx_pos == 5) {
                     mDecoderState.ubx_len |= ch << 8;
-                    mDecoderState.ubx_ck_a += ch;
-                    mDecoderState.ubx_ck_b += mDecoderState.ubx_ck_a;
-                    mDecoderState.ubx_pos++;
+                    if (mDecoderState.ubx_len >= (int)sizeof(mDecoderState.ubx)) {
+                        mDecoderState.ubx_pos = 0;
+                    } else {
+                        mDecoderState.ubx_ck_a += ch;
+                        mDecoderState.ubx_ck_b += mDecoderState.ubx_ck_a;
+                        mDecoderState.ubx_pos++;
+                    }
                 } else if ((mDecoderState.ubx_pos - 6) < mDecoderState.ubx_len) {
-                    mDecoderState.ubx[mDecoderState.ubx_pos - 6] = ch;
+                    if ((mDecoderState.ubx_pos - 6) < (int)sizeof(mDecoderState.ubx)) {
+                        mDecoderState.ubx[mDecoderState.ubx_pos - 6] = ch;
+                    }
                     mDecoderState.ubx_ck_a += ch;
                     mDecoderState.ubx_ck_b += mDecoderState.ubx_ck_a;
                     mDecoderState.ubx_pos++;
@@ -881,7 +899,8 @@ void Ublox::ubx_decode_rawx(uint8_t *msg, int len)
 
     ind = 16;
 
-    for (int i = 0;i < raw.num_meas;i++) {
+    int num_meas_safe = raw.num_meas > 128 ? 128 : raw.num_meas;
+    for (int i = 0;i < num_meas_safe;i++) {
         raw.obs[i].pr_mes = ubx_get_R8(msg, &ind);
         raw.obs[i].cp_mes = ubx_get_R8(msg, &ind);
         raw.obs[i].do_mes = ubx_get_R4(msg, &ind);

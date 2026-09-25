@@ -627,7 +627,7 @@ typedef struct {
     uint8_t num_meas;
     bool leap_sec;
     bool clk_reset;
-    ubx_rxm_rawx_obs obs[64];
+    ubx_rxm_rawx_obs obs[128];
 } ubx_rxm_rawx;
 
 typedef struct {
