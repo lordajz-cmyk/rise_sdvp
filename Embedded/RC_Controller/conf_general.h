@@ -38,7 +38,9 @@
 // IO BOARD
 // #define IO_BOARD
 
+#ifndef IS_MACTRAC	// make mactrac: Drängen av, annars krockar wheelspeed.c
 #define DRANGEN_NY
+#endif
 //#define DRANGEN_NY
 #define COMMUNICATION_TIMEOUT_MSEC 6000
 
