@@ -424,15 +424,16 @@ void motor_handle_route_end(void) {
 
 // Function to get actuators by activity
 ACTUATOR* motor_get_actuators_by_activity(uint16_t activity, int* count) {
-    MAIN_CONFIG conf;
-    conf_general_read_main_conf(&conf);
+    // main_config i RAM = EEPROM; en egen kopia tog 600 byte stack och
+    // hundratals EEPROM-sökningar per anrop (för motorer: vid varje spakkommando).
+    const MAIN_CONFIG *conf = &main_config;
     
     // Initialize count to 0
     *count = 0;
     
     // Loop through all actuators in the configuration
-    for (int i = 0; i < conf.vehicle.actuators; i++) {
-        if (conf.vehicle.actuator[i].activity == activity) {
+    for (int i = 0; i < conf->vehicle.actuators && i < 4; i++) {
+        if (conf->vehicle.actuator[i].activity == activity) {
             (*count)++;
         }
     }
@@ -451,9 +452,9 @@ ACTUATOR* motor_get_actuators_by_activity(uint16_t activity, int* count) {
     
     // Copy matching actuators to the result array
     int result_index = 0;
-    for (int i = 0; i < conf.vehicle.actuators; i++) {
-        if (conf.vehicle.actuator[i].activity == activity) {
-            result[result_index] = conf.vehicle.actuator[i];
+    for (int i = 0; i < conf->vehicle.actuators && i < 4; i++) {
+        if (conf->vehicle.actuator[i].activity == activity) {
+            result[result_index] = conf->vehicle.actuator[i];
             result_index++;
         }
     }

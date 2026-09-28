@@ -49,9 +49,49 @@ Samarbete med SLU och Jordbruksverket. En maskin (Lövsta). Körs med **RControl
 - `Linux/Car_Client/Car_Client` i git är en x86-64-binär. På Pi:n är den ombyggd
   (aarch64) och visas som ändrad — kör aldrig `git checkout` på den filen.
 
+## Kortet hängde vid Write — orsak och rättning (2026-09-28)
+Symptom i Lövsta: första Write i Confcommon gick bra, varje senare Write hängde kortet
+("Write timeout on serial port" i Car_Client, USB kvar men inget svar). En omstart av
+Car_Client hjälpte inte, 12 V av/på inte heller (kortet matas via USB); bara reset över
+ST-Link. Gunnar har aldrig sett det: hans äldre firmware (30.1) saknar fälten nedan.
+
+**Orsak (firmware, `CMD_SET_MAIN_CONFIG` i commands.c):**
+1. RControlStation skickar inställningarna t.o.m. aktuatorerna (packetinterface.cpp),
+   men firmwaren läste vidare 160 byte till: sensorer och reglerloopar (state control).
+   De bytena kom ur mottagningsbufferten, där GPS-text från tidigare paket låg kvar.
+   Kortets inställning efter en Write: `sensors` = 11315, `state_controls` = 12344,
+   reglerloopar med "enabled" satt och skräp i `control_type` (avläst 14:58).
+2. `state_control_init()` kördes mitt i Write, *före* tolkningen, och läste den förra
+   (redan trasiga) inställningen ur EEPROM. Därmed slogs reglerlooparna på, och
+   huvudtråden körde dem var 10:e ms: `pid_controllers[control_type]` med index ≈ 11000
+   och sensorloopar till 11315 → minnesåtkomst utanför RAM → HardFault → kortet står still.
+3. Efter reset fungerar kortet, eftersom `state_control_init()` inte körs vid start. Men
+   skräpet ligger kvar i EEPROM, så nästa Write hänger direkt igen.
+
+Hänga vid ruttuppladdning gör det inte: mätningen 14:51 visade att rutt (55), rensa (57)
+och start (59) kvitterades normalt. Det som hängde 15:02 var Write av Heartbeat.
+
+**Rättat i den här grenen:**
+- Write läser heartbeat, aktuatorer, sensorer och reglerloopar bara om de finns i paketet
+  (saknas sensorer/loopar → 0; äldre RControlStation utan heartbeat → värdet behålls).
+- `conf_general_sanitize_main_config()`: fler än 4 sensorer/loopar → 0, `enabled` bara
+  0/1, okänd `control_type` → av. Körs vid Write och vid start, så skräpet som redan ligger
+  i EEPROM nollställs.
+- `state_control_init()` körs efter att nya värden sparats och läser `main_config`.
+- PID per reglerloop (förut indexerat med `control_type`, 0–4, utanför arrayen på 4).
+- `motor_get_actuators_by_activity()` och sensorfunktionerna läser `main_config` i stället
+  för hela EEPROM:et (förut vid varje spakkommando; ~600 byte stack och hundratals
+  EEPROM-sökningar per anrop).
+- NMEA från u-blox-tråden får egen sändbuffert (skrev förut i `m_send_buffer` samtidigt
+  som kommandotråden byggde svar där).
+
+**Testa på kortet** (på Pi:n, RControlStation frånkopplad):
+`python3 ~/rise_sdvp/Linux/tools/testa_write.py 3` skriver tillbaka kortets egna värden
+som RControlStation gör och kontrollerar efter varje gång att kortet lever. Gammal
+firmware: hänger på första Write (skräpet ligger i EEPROM). Ny: tre OK, och
+sensorer/reglerloopar visas som 0.
+
 ## Att göra
-1. Besök i Lövsta: foton, Confcommon-skärmbilder, CAN-terminering, Jetson-läsrunda
-   (checklista: robot-control/besok_mactrac_checklista.md).
-2. Flasha vårt kort med `gunnar-mactrac` först → ställ in enligt skärmbilderna → testa.
-3. Sedan `mactrac`-grenen → testa igen.
-4. Pi:n i ordning, bytet på plats, testordning: styrning och armar före drivning.
+1. Flasha `mactrac` (med rättningen ovan) på MacBot-kortet, ELF så att EEPROM behålls,
+   och kör `testa_write.py`. Sedan Write från RControlStation som vanligt.
+2. Därefter: ap_base_rad 8,0 (Gunnars värde) kan skrivas.
