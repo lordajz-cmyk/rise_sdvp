@@ -91,6 +91,20 @@ som RControlStation gör och kontrollerar efter varje gång att kortet lever. Ga
 firmware: hänger på första Write (skräpet ligger i EEPROM). Ny: tre OK, och
 sensorer/reglerloopar visas som 0.
 
+## Autopilot, heartbeat och stopp (2026-09-28 kväll)
+- **Heartbeat i sekunder** (som RControlStation visar). Förut användes värdet som ms:
+  standard 3 = 3 ms stängde av autopiloten direkt. 0 = av. Nytt värde gäller direkt
+  efter Write. Rekommenderat: 3 s (4G-luckor på upp till ~1 s har mätts).
+- **Stopp:** när autopiloten stängs av (Stop, tappad förbindelse) eller rutten tar slut
+  går gasen till neutralt och armarna stannar direkt (`motor_stop()`). Förut låg gasen
+  kvar upp till 2 s och armarna upp till 10 s.
+- **Stopp vid Write:** autopilot av, gas neutral, armar stopp innan inställningar sparas.
+- **Autopilotens fart är öppen styrning:** gaspådrag = fart (m/s) × 0,5.
+  1 km/h ≈ 0,14, 2 km/h ≈ 0,28, 3 km/h ≈ 0,42 (manuellt kör du med Max 0,35).
+- RControlStation (master): nya ruttpunkter fick oinitierat minne som attribut och fart.
+  Rutten 14:51 hade attribut 0x6518 = "bakre armar upp" och fart 0. Rättat
+  (mapwidget.cpp). **Lägg ut nya rutter**, gamla punkter bär med sig skräpet.
+
 ## Att göra
 1. Flasha `mactrac` (med rättningen ovan) på MacBot-kortet, ELF så att EEPROM behålls,
    och kör `testa_write.py`. Sedan Write från RControlStation som vanligt.
