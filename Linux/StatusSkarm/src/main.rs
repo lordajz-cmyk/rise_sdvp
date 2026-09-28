@@ -47,6 +47,9 @@ const GGA_MAX_AGE: Duration = Duration::from_secs(5);
 
 const CAR_CLIENT_ADDR: &str = "127.0.0.1:8300";
 const BOARD_REPLY_ADDR: &str = "127.0.0.1:8301";
+/// Unix-tid (s) för styrkortets senaste svar, skrivs av den instans som äger port
+/// 8301 och läses av en andra instans (t.ex. `--text` över ssh).
+const BOARD_SHARED_FILE: &str = "/tmp/statusskarm_styrkort_svar";
 const RTKRCV_NMEA_ADDR: &str = "127.0.0.1:2948";
 const USB_DEVICE: &str = "/dev/vehicle";
 /// ID 255 = alla, så kortet svarar oavsett vilket bil-ID Car_Client kör med.
@@ -207,6 +210,13 @@ fn service_active(name: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// Sekunder sedan styrkortet senast svarade enligt den instans som äger port 8301.
+fn shared_board_reply_age() -> Option<u64> {
+    let t: u64 = std::fs::read_to_string(BOARD_SHARED_FILE).ok()?.trim().parse().ok()?;
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).ok()?.as_secs();
+    Some(now.saturating_sub(t))
+}
+
 /// Sekunder sedan senaste handskakning med någon peer på wg0.
 fn wireguard_handshake_age() -> Result<Option<u64>, ()> {
     let out = Command::new("sudo")
@@ -276,10 +286,21 @@ fn spawn_collector(status: Arc<Mutex<Status>>) {
             if let Some(s) = &socket {
                 if last_board_query.map_or(true, |t| t.elapsed() >= BOARD_POLL) {
                     last_board_query = Some(Instant::now());
-                    let _ = s.send_to(&BOARD_QUERY, CAR_CLIENT_ADDR);
-                    // Läs tills svaret kommer. Car_Client skickar också vidare
-                    // allt annat kortet säger (tillstånd, utskrifter): hoppa över det.
                     let mut buf = [0u8; 2048];
+                    // Car_Client skickar ALLT kortet säger hit (GPS-text, tillståndssvar
+                    // till RControlStation, ~25 paket/s). Mellan frågorna fylls bufferten,
+                    // och då kastades kortets svar: "svarar inte" fast kortet svarade.
+                    // Töm bufferten först (ett sent svar på förra frågan räknas också).
+                    if s.set_nonblocking(true).is_ok() {
+                        while let Ok(n) = s.recv(&mut buf) {
+                            if n >= 2 && buf[1] == CMD_AP_GET_ROUTE_PART {
+                                last_board_reply = Some(Instant::now());
+                            }
+                        }
+                        let _ = s.set_nonblocking(false);
+                    }
+                    let _ = s.send_to(&BOARD_QUERY, CAR_CLIENT_ADDR);
+                    // Läs tills svaret kommer, hoppa över allt annat.
                     let deadline = Instant::now() + Duration::from_millis(1200);
                     while Instant::now() < deadline {
                         match s.recv(&mut buf) {
@@ -291,9 +312,19 @@ fn spawn_collector(status: Arc<Mutex<Status>>) {
                             Err(_) => break,
                         }
                     }
+                    if last_board_reply.map_or(false, |t| t.elapsed() < BOARD_POLL) {
+                        let now = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+                        let _ = std::fs::write(BOARD_SHARED_FILE, now.to_string());
+                    }
                 }
             }
-            let board_ok = usb_present && last_board_reply.map_or(false, |t| t.elapsed() < BOARD_POLL * 2);
+            // Porten upptagen (den grafiska statusskärmen kör redan, t.ex. vid --text
+            // över ssh): använd dess senaste svar i stället för att visa "svarar inte".
+            let board_ok = usb_present
+                && match &socket {
+                    Some(_) => last_board_reply.map_or(false, |t| t.elapsed() < BOARD_POLL * 2),
+                    None => shared_board_reply_age().map_or(false, |age| age < (BOARD_POLL * 2).as_secs()),
+                };
 
             let car_client_ok = service_active("car_client.service");
             let rtk_service_ok = service_active("car_rtk.service");
