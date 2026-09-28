@@ -110,9 +110,12 @@ fi
 echo -e "${YELLOW}${BOLD}[Steg 2/5] Installerar USB-regler (udev)...${NC}"
 UDEV_DIR="/etc/udev/rules.d"
 
-if [ -f "$DIR/Linux/PI/udev/10-rise_sdvp.rules" ]; then
-  cp "$DIR/Linux/PI/udev/10-rise_sdvp.rules" "$UDEV_DIR/"
-  cp "$DIR/Linux/PI/udev/49-stlinkv2.rules" "$UDEV_DIR/"
+# Mallarna: skriptet körs inifrån rise_sdvp eller från mappen ovanför.
+UDEV_SRC="$DIR/Linux/PI/udev"
+[ -f "$UDEV_SRC/10-rise_sdvp.rules" ] || UDEV_SRC="$DIR/rise_sdvp/Linux/PI/udev"
+if [ -f "$UDEV_SRC/10-rise_sdvp.rules" ]; then
+  cp "$UDEV_SRC/10-rise_sdvp.rules" "$UDEV_DIR/"
+  cp "$UDEV_SRC/49-stlinkv2.rules" "$UDEV_DIR/"
   udevadm control --reload-rules && udevadm trigger
   echo -e "${GREEN}✅ USB-regler installerade! (/dev/car och /dev/ublox är aktiva)${NC}\n"
 else
