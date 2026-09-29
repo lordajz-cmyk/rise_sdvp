@@ -48,3 +48,14 @@ Linux/RControlStation/Models/*.model
 **/*.gblweb/
 web/
 !web/server.py
+
+# Lokalt skräp (inte på GitHub): terminalloggar, säkerhetskopior, IDE-byggen, körloggar
+/20[0-9][0-9]-[0-9][0-9]-[0-9][0-9]_*.txt
+*.bak_20[0-9][0-9]*
+**/.qtcreator/
+Linux/Car_Client/logs/
+osm_tiles/
+__pycache__/
+# Interna statusanteckningar (finns lokalt)
+MACTRAC_STATUS.md
+SESSION_STATUS.md
