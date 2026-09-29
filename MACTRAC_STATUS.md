@@ -105,7 +105,15 @@ sensorer/reglerloopar visas som 0.
   Rutten 14:51 hade attribut 0x6518 = "bakre armar upp" och fart 0. Rättat
   (mapwidget.cpp). **Lägg ut nya rutter**, gamla punkter bär med sig skräpet.
 
-## Att göra
-1. Flasha `mactrac` (med rättningen ovan) på MacBot-kortet, ELF så att EEPROM behålls,
-   och kör `testa_write.py`. Sedan Write från RControlStation som vanligt.
-2. Därefter: ap_base_rad 8,0 (Gunnars värde) kan skrivas.
+## Att göra (2026-09-29, Lövsta)
+1. Pi:n: `cd ~/rise_sdvp && git pull` (RControlStation frånkopplad).
+2. Flasha: `./flash_styrkort_macbot.sh` (motor av, skriv FLASHA). Skriptet läser av kortet efteråt.
+3. `python3 ~/rise_sdvp/Linux/tools/testa_write.py 3`: tre Write i rad utan att kortet hänger.
+4. Confcommon: Heartbeat = 3, sedan Write.
+5. Statusskärmen: rutan Styrkort ska vara grön.
+6. Vinkelgivaren: Terminal på bilfliken, `addio_read`. FTR2-vinkeln ska ändras när du styr.
+7. Hastighetsgivaren: kör en bit, farten på bilfliken ska inte stå på 0.
+8. Antennen: centrerat i sidled, mät avståndet framför bakaxeln och skriv in det som GPS Ant X (Ant Y = 0), Write.
+9. Autopilot: anslut och vänta på RTK Fix, kontrollera att pilen pekar rätt, V = 2 km/h,
+   Delete current route, lägg cirka 10 punkter rakt fram med Shift+klick, Write route to car,
+   Autopilot. Nödstoppet i handen; Stop om den svänger bort från punkt 1.
