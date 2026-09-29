@@ -373,6 +373,16 @@ void motor_set_steering_autopilot(float steering_angle, float circle_radius) {
 }
 
 void motor_set_speed_autopilot(float speed) {
+    // Hastighetsgivaren (wheelspeed.c) ser inte riktningen utan tar den härifrån.
+    // Förut satte bara manuell körning riktningen, så efter en manuell backning
+    // räknade kortet autopilotens framåtkörning som backning: positionen och kursen
+    // mellan GPS-uppdateringarna drog åt fel håll (vingel, ikonen vred sig i svängar).
+    if (speed > 0.01f) {
+        current_motor_direction = 1;
+    } else if (speed < -0.01f) {
+        current_motor_direction = -1;
+    }
+
     #if HAS_HYDRAULIC_DRIVE
         hydraulic_set_speed(speed);
     #else
