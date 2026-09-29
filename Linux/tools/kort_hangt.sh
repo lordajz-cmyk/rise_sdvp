@@ -14,29 +14,11 @@ UT="$HOME/kort_hangt_$(date +%Y-%m-%d_%H-%M-%S).txt"
 ELF="$HOME/rise_sdvp/Embedded/RC_Controller/build/fw_mactrac.elf"
 OCD=(sudo openocd -f board/stm32f4discovery.cfg -c "reset_config trst_only combined")
 
-CH=""
-if [ -f "$ELF" ] && command -v arm-none-eabi-nm >/dev/null; then
-  CH=$(arm-none-eabi-nm "$ELF" | awk '$3=="ch"{print "0x"$1}')
-fi
-
-las() {
-  local cmd="init; halt 2000"
-  for r in pc lr sp primask basepri; do cmd="$cmd; echo \"$r [capture \\\"reg $r\\\"]\""; done
-  cmd="$cmd; echo [capture \"mdw 0xE000ED28 3\"]"               # CFSR, HFSR, DFSR
-  cmd="$cmd; echo [capture \"mdw 0x50000014 1\"]"               # OTG_FS GINTSTS
-  cmd="$cmd; echo [capture \"mdw 0x50000808 1\"]"               # OTG_FS DSTS (bit0 = suspend)
-  cmd="$cmd; echo [capture \"mdw 0x50000804 1\"]"               # OTG_FS DCTL
-  [ -n "$CH" ] && cmd="$cmd; echo [capture \"mdw $CH 48\"]"    # ChibiOS: ch (systemklocka m.m.)
-  cmd="$cmd; resume; exit"
-  "${OCD[@]}" -c "$cmd" 2>&1 | grep -v -E "^(Info|Open On|Licensed|For bug|\s+http|srst_only|trst_only)"
-}
-
 {
   echo "=== $(date) — styrkortet svarar inte ==="
-  echo "--- ELF: $ELF  (ch = ${CH:-okänd})"
-  echo "--- Avläsning 1"; las
-  sleep 1
-  echo "--- Avläsning 2 (1 s senare: har PC och klockan i 'ch' ändrats lever processorn)"; las
+  echo "--- ELF: $ELF"
+  echo "--- Processor, USB och trådar (två avläsningar med 1 s mellanrum)"
+  (cd /tmp && sudo python3 "$(dirname "$0")/kort_tradar.py" "$ELF")
   echo "--- USB på Pi:n"; ls -la /dev/vehicle /dev/ublox 2>&1; sudo dmesg -T | tail -15
   echo "--- Car_Client (senaste skärmen)"
   screen -S car -X hardcopy -h /tmp/car_hangt.txt 2>/dev/null; sleep 1
