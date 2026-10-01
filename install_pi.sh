@@ -16,6 +16,18 @@ BLUE='\e[34m'
 BOLD='\e[1m'
 NC='\e[0m' # No Color
 
+BOARD=legacy
+DEFER_START=0
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --board) [ "$#" -ge 2 ] || exit 1; BOARD="$2"; shift 2 ;;
+    --defer-start) DEFER_START=1; shift ;;
+    -h|--help) echo "sudo bash install_pi.sh [--board legacy|mp101] [--defer-start]"; exit 0 ;;
+    *) echo "Unknown argument: $1" >&2; exit 1 ;;
+  esac
+done
+case "$BOARD" in legacy|mp101) ;; *) echo "Unknown board: $BOARD" >&2; exit 1 ;; esac
+
 # Säkerställ att skriptet körs som root (sudo)
 if [ "$EUID" -ne 0 ]; then
   echo -e "${RED}${BOLD}Fel:${NC} Detta skript måste köras med sudo! Kör: ${BOLD}sudo ./install_pi.sh${NC}"
@@ -25,6 +37,15 @@ fi
 REAL_USER=${SUDO_USER:-$USER}
 REAL_HOME=$(getent passwd "$REAL_USER" | cut -d: -f6)
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+MP101_REBOOT_REQUIRED=0
+if [ "$BOARD" = mp101 ]; then
+  . /etc/os-release
+  if [ "${VERSION_ID:-}" != 13 ] || [ "$(uname -m)" != aarch64 ] ||
+     ! tr -d '\0' </proc/device-tree/model | grep -q 'Compute Module 5'; then
+    echo "MP101 requires a CM5 running Raspberry Pi OS Lite 64-bit Debian 13/Trixie." >&2
+    exit 1
+  fi
+fi
 
 echo -e "${BLUE}${BOLD}======================================================================${NC}"
 echo -e "${BLUE}${BOLD}   🍓  KONFIGURATION AV ENBART RASPBERRY PI-SYSTEMET  🍓${NC}"
@@ -40,8 +61,12 @@ echo -e "${YELLOW}${BOLD}[Steg 1/5] Installerar Linux-paket...${NC}"
 # Vänta upp till 5 min om apt är upptaget (t.ex. automatiska uppdateringar efter
 # uppstart), och städa upp en tidigare avbruten installation (strömavbrott o.d.).
 APT="apt-get -y -o DPkg::Lock::Timeout=300"
-dpkg --configure -a
-$APT update
+if [ "$BOARD" = mp101 ]; then
+  dpkg --configure -a && $APT update || exit 1
+else
+  dpkg --configure -a
+  $APT update
+fi
 
 # Listan på alla baspaket som behövs på Pi:n
 PACKAGES=(
@@ -56,6 +81,10 @@ PACKAGES=(
     wireguard
     wireguard-tools
 )
+
+if [ "$BOARD" = mp101 ]; then
+  PACKAGES+=(python3 gpiod raspi-utils libnewlib-arm-none-eabi)
+fi
 
 # Intelligent detektering av Qt-version (Prioriterar Qt6 enligt Benjamins instruktioner)
 if apt-cache show qt6-base-dev &>/dev/null; then
@@ -100,6 +129,7 @@ else
       echo -e "  - ${BOLD}$fpkg${NC}"
     done
     echo -e "\n${YELLOW}Tips: Du kan behöva kontrollera din internetanslutning eller köra 'sudo apt update'.${NC}"
+    if [ "$BOARD" = mp101 ]; then exit 1; fi
     echo -e "Installationen fortsätter, men bygget av Car_Client kan påverkas om viktiga paket saknas.\n"
   fi
 fi
@@ -110,6 +140,26 @@ fi
 echo -e "${YELLOW}${BOLD}[Steg 2/5] Installerar USB-regler (udev)...${NC}"
 UDEV_DIR="/etc/udev/rules.d"
 
+if [ "$BOARD" = mp101 ]; then
+  PI_DIR="$DIR/Linux/PI"
+  [ -d "$PI_DIR" ] || PI_DIR="$DIR/rise_sdvp/Linux/PI"
+  if ! openocd -c 'adapter driver linuxgpiod' -c shutdown; then
+    echo "Installed OpenOCD does not support CM5 linuxgpiod." >&2
+    exit 1
+  fi
+  python3 "$PI_DIR/mp101_setup.py"
+  BOOT_RC=$?
+  case "$BOOT_RC" in
+    0) ;;
+    10) MP101_REBOOT_REQUIRED=1 ;;
+    *) exit "$BOOT_RC" ;;
+  esac
+  getent group gpio >/dev/null || groupadd --system gpio
+  usermod -a -G dialout,gpio "$REAL_USER" || exit 1
+  install -m 644 "$PI_DIR/udev/10-mp101.rules" "$UDEV_DIR/10-rise_sdvp.rules" || exit 1
+  install -m 644 "$PI_DIR/udev/49-stlinkv2.rules" "$UDEV_DIR/49-stlinkv2.rules" || exit 1
+  udevadm control --reload-rules && udevadm trigger && udevadm settle || exit 1
+else
 # Mallarna: skriptet körs inifrån rise_sdvp eller från mappen ovanför.
 UDEV_SRC="$DIR/Linux/PI/udev"
 [ -f "$UDEV_SRC/10-rise_sdvp.rules" ] || UDEV_SRC="$DIR/rise_sdvp/Linux/PI/udev"
@@ -126,6 +176,7 @@ else
   echo 'SUBSYSTEMS=="usb", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="3748", MODE:="0666", SYMLINK+="stlinkv2_%n"' > "$UDEV_DIR/49-stlinkv2.rules"
   udevadm control --reload-rules && udevadm trigger
   echo -e "${GREEN}✅ Manuella USB-regler skapade och laddade!${NC}\n"
+fi
 fi
 
 # ------------------------------------------------------------------------------
@@ -203,9 +254,12 @@ EOF
 
 systemctl daemon-reload
 systemctl enable car_rtk.service
-systemctl restart car_rtk.service
-
-echo -e "${GREEN}✅ Swepos RTK-tjänst konfigurerad och startad!${NC}\n"
+if [ "$BOARD" = mp101 ] && { [ "$DEFER_START" -eq 1 ] || [ "$MP101_REBOOT_REQUIRED" -eq 1 ]; }; then
+  echo "Swepos RTK configured; startup deferred."
+else
+  systemctl restart car_rtk.service
+  echo -e "${GREEN}✅ Swepos RTK-tjänst konfigurerad och startad!${NC}\n"
+fi
 fi
 
 # ------------------------------------------------------------------------------
@@ -278,9 +332,29 @@ RestartSec=10
 WantedBy=multi-user.target
 EOF
 
-systemctl daemon-reload
-systemctl enable car_client.service
-systemctl start car_client.service
+if [ "$BOARD" = mp101 ]; then
+  systemctl daemon-reload || exit 1
+else
+  systemctl daemon-reload
+fi
+if [ "$BOARD" = mp101 ] && { [ "$DEFER_START" -eq 1 ] || [ "$MP101_REBOOT_REQUIRED" -eq 1 ]; }; then
+  systemctl disable --now car_client.service || exit 1
+elif [ "$BOARD" = mp101 ]; then
+  systemctl enable car_client.service && systemctl start car_client.service || exit 1
+else
+  systemctl enable car_client.service
+  systemctl start car_client.service
+fi
+
+if [ "$BOARD" = mp101 ]; then
+  if [ "$MP101_REBOOT_REQUIRED" -eq 1 ]; then
+    echo "MP101 configured. Reboot, then rerun the same command. MCU flashing has not run."
+    exit 10
+  fi
+  echo "CM5/MP101 configured; U10 is the primary GPS (/dev/ublox and /dev/rtk)."
+  [ "$DEFER_START" -eq 0 ] || echo "Application startup deferred until MCU flashing completes."
+  exit 0
+fi
 
 echo -e "${GREEN}✅ Raspberry Pi konfigurerad framgångsrikt! Autostart är aktiverad!${NC}"
 echo -e "Koppla nu in dina två USB-kablar och njut av robotdriften."

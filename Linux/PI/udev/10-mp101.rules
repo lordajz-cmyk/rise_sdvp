@@ -1,0 +1,5 @@
+# MP101 onboard dwc2 hub: port 1 = STM32, port 2 = U10/USART6 primary GPS.
+# Import path_id here because these rules precede the standard serial rules.
+SUBSYSTEM=="tty", KERNEL=="ttyACM*", IMPORT{builtin}="path_id"
+SUBSYSTEM=="tty", KERNEL=="ttyACM*", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="5740", ENV{ID_PATH}=="platform-1000480000.usb-usb*-0:1.1:1.0", GROUP="dialout", MODE="0660", SYMLINK+="car vehicle"
+SUBSYSTEM=="tty", KERNEL=="ttyACM*", ATTRS{idVendor}=="1546", ATTRS{idProduct}=="01a[89]", ENV{ID_PATH}=="platform-1000480000.usb-usb*-0:1.2:1.0", GROUP="dialout", MODE="0660", SYMLINK+="ublox rtk"
