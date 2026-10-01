@@ -228,7 +228,27 @@
 #define AP_ROUTE_SIZE				2000
 
 // Board-dependent settings
-#if IS_F9_BOARD
+#ifdef IS_ROVMCU
+#define UBLOX_IS_F9P                 1
+#define LED_RED_GPIO                 GPIOC
+#define LED_RED_PIN                  11
+#define LED_GREEN_GPIO               GPIOC
+#define LED_GREEN_PIN                10
+#define CAN1_RX_GPIO                 GPIOB
+#define CAN1_RX_PIN                  8
+#define CAN1_TX_GPIO                 GPIOB
+#define CAN1_TX_PIN                  9
+#define HAS_BMI160                   0
+#define HAS_BMI270                   1
+#define HAS_ID_SW                    0
+#define PWR_5V_R1                    20000.0
+#define PWR_5V_R2                    10000.0
+// MP101 has no populated battery divider. Keep battery vin on the existing
+// VESC/CAN telemetry path; PC1/IN11 measures the regulated 5 V rail only.
+#ifdef USE_ADCONV_FOR_VIN
+#undef USE_ADCONV_FOR_VIN
+#endif
+#elif IS_F9_BOARD
 #define UBLOX_IS_F9P				1
 #define LED_RED_GPIO				GPIOC
 #define LED_RED_PIN					10
@@ -258,17 +278,11 @@
 #define VIN_R2						1500.0
 #endif
 
-// ROV_MCU (Upwis MP101_323): F9-kortets stiftlayout (IS_F9_BOARD) med CM5 och
-// STM32F415VGT, men BMI270 i stället för BMI160. Övriga skillnader (CAN-
-// transceivrarnas SILENT-ben, riktning på DI1-4, GPS 2:s reset) sköts av
-// rovmcu_board_init() i main.c. Stiftkarta: Embedded/RC_Controller/ROVMCU.md.
-#ifdef IS_ROVMCU
-#undef HAS_BMI160
-#define HAS_BMI160					0
-#define HAS_BMI270					1
-#endif
 #ifndef HAS_BMI270
 #define HAS_BMI270					0
+#endif
+#if HAS_BMI160 && HAS_BMI270
+#error "Select only one IMU driver"
 #endif
 
 #ifndef M_PI

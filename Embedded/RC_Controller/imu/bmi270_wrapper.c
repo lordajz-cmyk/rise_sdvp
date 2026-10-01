@@ -1,6 +1,6 @@
 /*
 	BMI270 (IMU på ROV_MCU-kortet, Upwis MP101_323) på I2C2-benen PB10/PB11 via
-	mjukvaru-I2C, samma buss som BMI160 på F9-kortet. Samma gränssnitt och enheter
+	hårdvaru-I2C2. Samma gränssnitt och enheter
 	som bmi160_wrapper, så pos.c behöver bara välja drivrutin.
 
 	Start enligt Bosch (datablad och BMI270_SensorAPI): chip-ID 0x24, mjukstart,
@@ -10,8 +10,13 @@
  */
 
 #include "bmi270_wrapper.h"
-#include "i2c_bb.h"
+#include "conf_general.h"
+#include "commands.h"
+#include "terminal.h"
+#include "hal.h"
 #include <string.h>
+
+#if HAS_BMI270
 
 #ifndef BMI270_I2C_ADDR
 #define BMI270_I2C_ADDR			0x68	// SDO till GND på ROV_MCU
@@ -44,20 +49,85 @@ static THD_FUNCTION(bmi270_thread, arg);
 static THD_WORKING_AREA(bmi270_thread_wa, 2048);
 
 // Private
-static i2c_bb_state m_i2c_bb;
+static const I2CConfig m_i2c_config = { OPMODE_I2C, 100000, STD_DUTY_CYCLE };
+static msg_t m_i2c_result = MSG_OK;
+static i2cflags_t m_i2c_errors = 0;
 static void(*read_callback)(float *accel, float *gyro, float *mag) = 0;
 static int rate_hz;
-static bool m_ok = false;
+static volatile bool m_ok = false;
+static volatile uint32_t m_init_failures = 0;
+static volatile uint32_t m_read_failures = 0;
+static uint8_t m_internal_status = 0;
+
+static void terminal_status(int argc, const char **argv) {
+	(void)argc;
+	(void)argv;
+	commands_printf("BMI270 ready: %s, init status: 0x%02X, init failures: %u, read failures: %u, I2C result: %d, errors: 0x%X\n",
+			m_ok ? "yes" : "no", m_internal_status,
+			(unsigned int)m_init_failures, (unsigned int)m_read_failures,
+			(int)m_i2c_result, (unsigned int)m_i2c_errors);
+}
+
+static void start_i2c(void) {
+	palSetPadMode(GPIOB, 10, PAL_MODE_ALTERNATE(4) |
+			PAL_STM32_OTYPE_OPENDRAIN | PAL_STM32_OSPEED_MID2);
+	palSetPadMode(GPIOB, 11, PAL_MODE_ALTERNATE(4) |
+			PAL_STM32_OTYPE_OPENDRAIN | PAL_STM32_OSPEED_MID2);
+	i2cStart(&I2CD2, &m_i2c_config);
+}
+
+static void restore_i2c(void) {
+	i2cAcquireBus(&I2CD2);
+	i2cStop(&I2CD2);
+	palSetPad(GPIOB, 10);
+	palSetPad(GPIOB, 11);
+	palSetPadMode(GPIOB, 10, PAL_MODE_OUTPUT_OPENDRAIN);
+	palSetPadMode(GPIOB, 11, PAL_MODE_OUTPUT_OPENDRAIN);
+	// Clear an interrupted byte, then generate STOP before restarting I2C2.
+	for (unsigned int i = 0; i < 9; i++) {
+		palClearPad(GPIOB, 10);
+		chThdSleepMicroseconds(100);
+		palSetPad(GPIOB, 10);
+		chThdSleepMicroseconds(100);
+	}
+	palClearPad(GPIOB, 10);
+	palClearPad(GPIOB, 11);
+	chThdSleepMicroseconds(100);
+	palSetPad(GPIOB, 10);
+	chThdSleepMicroseconds(100);
+	palSetPad(GPIOB, 11);
+	chThdSleepMicroseconds(100);
+	start_i2c();
+	i2cReleaseBus(&I2CD2);
+}
+
+static bool transfer(const uint8_t *tx, size_t ntx, uint8_t *rx, size_t nrx) {
+	i2cAcquireBus(&I2CD2);
+	// Leave the stopped driver alone until recovery restarts it.
+	if (I2CD2.state != I2C_READY) {
+		i2cReleaseBus(&I2CD2);
+		return false;
+	}
+	m_i2c_result = i2cMasterTransmitTimeout(&I2CD2, BMI270_I2C_ADDR,
+			tx, ntx, rx, nrx, MS2ST(100));
+	m_i2c_errors = i2cGetErrors(&I2CD2);
+	if (m_i2c_result == MSG_TIMEOUT) {
+		// ChibiOS leaves DMA armed on timeout. Stop it while the bus is held,
+		// before reg_read/reg_write return their stack-backed buffers.
+		i2cStop(&I2CD2);
+	}
+	i2cReleaseBus(&I2CD2);
+	return m_i2c_result == MSG_OK;
+}
 
 static bool reg_write(uint8_t reg, const uint8_t *data, uint16_t len) {
 	uint8_t txbuf[CONFIG_CHUNK + 1];
 	if (len > CONFIG_CHUNK) {
 		return false;
 	}
-	m_i2c_bb.has_error = 0;
 	txbuf[0] = reg;
 	memcpy(txbuf + 1, data, len);
-	return i2c_bb_tx_rx(&m_i2c_bb, BMI270_I2C_ADDR, txbuf, len + 1, 0, 0);
+	return transfer(txbuf, len + 1, 0, 0);
 }
 
 static bool reg_write1(uint8_t reg, uint8_t val) {
@@ -65,21 +135,28 @@ static bool reg_write1(uint8_t reg, uint8_t val) {
 }
 
 static bool reg_read(uint8_t reg, uint8_t *data, uint16_t len) {
-	m_i2c_bb.has_error = 0;
-	return i2c_bb_tx_rx(&m_i2c_bb, BMI270_I2C_ADDR, &reg, 1, data, len);
+	return transfer(&reg, 1, data, len);
 }
 
 static bool init_bmi270(void) {
 	uint8_t id = 0;
+	m_internal_status = 0;
+	if (bmi270_config_file_len != 8192U) {
+		return false;
+	}
 	// Första läsningen efter spänningspåslag kan misslyckas; läs två gånger.
 	reg_read(REG_CHIP_ID, &id, 1);
 	if (!reg_read(REG_CHIP_ID, &id, 1) || id != BMI270_CHIP_ID) {
 		return false;
 	}
 
-	reg_write1(REG_CMD, CMD_SOFT_RESET);
+	if (!reg_write1(REG_CMD, CMD_SOFT_RESET)) {
+		return false;
+	}
 	chThdSleepMilliseconds(3);
-	reg_read(REG_CHIP_ID, &id, 1);	// efter reset: en läsning för att väcka I2C
+	if (!reg_read(REG_CHIP_ID, &id, 1) || id != BMI270_CHIP_ID) {
+		return false;
+	}
 
 	// Energisparläget av, konfigurationsladdning av, sedan uppladdning.
 	if (!reg_write1(REG_PWR_CONF, 0x00)) {
@@ -109,8 +186,8 @@ static bool init_bmi270(void) {
 	}
 	chThdSleepMilliseconds(25);	// databladet: ≤ 20 ms
 
-	uint8_t status = 0;
-	if (!reg_read(REG_INTERNAL_STATUS, &status, 1) || (status & 0x0F) != 0x01) {
+	if (!reg_read(REG_INTERNAL_STATUS, &m_internal_status, 1) ||
+			(m_internal_status & 0x0F) != 0x01) {
 		return false;
 	}
 
@@ -126,19 +203,22 @@ static bool init_bmi270(void) {
 }
 
 void bmi270_wrapper_init(int samp_rate_hz) {
-	rate_hz = samp_rate_hz;
+	rate_hz = (samp_rate_hz > 0 && samp_rate_hz <= 1000000) ? samp_rate_hz : 500;
 
-	m_i2c_bb.sda_gpio = GPIOB;
-	m_i2c_bb.sda_pin = 11;
-	m_i2c_bb.scl_gpio = GPIOB;
-	m_i2c_bb.scl_pin = 10;
-	i2c_bb_init(&m_i2c_bb);
+	// Release both open-drain lines before changing their GPIO mode.
+	palSetPad(GPIOB, 11);
+	palSetPad(GPIOB, 10);
+	start_i2c();
 
 	m_ok = init_bmi270();
-	if (m_ok) {
-		chThdCreateStatic(bmi270_thread_wa, sizeof(bmi270_thread_wa),
-				NORMALPRIO, bmi270_thread, NULL);
+	if (!m_ok) {
+		m_init_failures++;
 	}
+	// A failed initial upload must remain visible and recoverable after boot.
+	terminal_register_command_callback("bmi270_status",
+			"Read BMI270 initialization and I2C error status.", 0, terminal_status);
+	chThdCreateStatic(bmi270_thread_wa, sizeof(bmi270_thread_wa),
+			NORMALPRIO, bmi270_thread, NULL);
 }
 
 void bmi270_wrapper_set_read_callback(void(*func)(float *accel, float *gyro, float *mag)) {
@@ -151,16 +231,32 @@ bool bmi270_wrapper_is_ok(void) {
 
 static THD_FUNCTION(bmi270_thread, arg) {
 	(void)arg;
+	unsigned int failed_reads = 0;
 
 	chRegSetThreadName("BMI Sampling");
 
 	for(;;) {
+		if (!m_ok) {
+			chThdSleepMilliseconds(1000);
+			restore_i2c();
+			m_ok = init_bmi270();
+			if (!m_ok) {
+				m_init_failures++;
+				continue;
+			}
+			failed_reads = 0;
+		}
 		uint8_t d[12];
 
 		if (!reg_read(REG_ACC_X_LSB, d, sizeof(d))) {
+			m_read_failures++;
+			if (++failed_reads >= 5) {
+				m_ok = false;
+			}
 			chThdSleepMilliseconds(5);
 			continue;
 		}
+		failed_reads = 0;
 
 		float tmp_accel[3], tmp_gyro[3], tmp_mag[3];
 
@@ -180,3 +276,5 @@ static THD_FUNCTION(bmi270_thread, arg) {
 		chThdSleepMicroseconds(1000000 / rate_hz);
 	}
 }
+
+#endif /* HAS_BMI270 */
