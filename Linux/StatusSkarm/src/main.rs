@@ -695,7 +695,11 @@ impl App {
             // Sista rutan (Pi) fyller resten av sista raden i stället för att lämna ett hål.
             let span = if i + 1 == tiles.len() { cols - c } else { 1 };
             let tw = w * span as f32 + gap * (span as f32 - 1.0);
-            let b = egui::Rect::from_min_size(min, egui::vec2(tw, h));
+            let b0 = egui::Rect::from_min_size(min, egui::vec2(tw, h));
+            // Pekskärm: ingen hover, men rutan lyser upp och krymper lite medan man trycker.
+            let resp = tile.action.map(|_| ui.interact(b0, egui::Id::new(("tile", i)), egui::Sense::click()));
+            let pressed = resp.as_ref().map_or(false, |r| r.is_pointer_button_down_on());
+            let b = if pressed { b0.shrink(3.0) } else { b0 };
             let accent = neon(tile.color);
             let lit = tile.color != BOX_IDLE;
             any_pulsing |= tile.pulsing;
@@ -711,14 +715,20 @@ impl App {
                     painter.rect_stroke(b.expand(k as f32 * 2.0), rounding + k as f32 * 2.0, egui::Stroke::new(2.0_f32, with_alpha(accent, a)));
                 }
             }
-            // Glas: mörk yta, ljusare överkant.
-            painter.rect_filled(b, rounding, PANEL);
+            // Glas: mörk yta, ljusare överkant (ljusare medan man trycker).
+            painter.rect_filled(b, rounding, if pressed { lighten(PANEL, 0.12) } else { PANEL });
             let sheen = egui::Rect::from_min_max(b.min, egui::pos2(b.right(), b.top() + h * 0.45));
             painter.rect_filled(
                 sheen,
                 egui::Rounding { nw: rounding, ne: rounding, sw: 0.0, se: 0.0 },
                 egui::Color32::from_white_alpha(6),
             );
+            // Ett ljus med svans som vandrar runt kanten. Rutorna går förskjutet.
+            if lit || pressed {
+                let lap = if tile.pulsing { 1.6 } else { 4.2 };
+                let head = (t / lap + i as f32 * 0.137).fract();
+                paint_border_comet(painter, b, rounding, head, accent);
+            }
             // Kant och markering i vänsterkanten.
             painter.rect_stroke(b, rounding, egui::Stroke::new(1.5_f32, with_alpha(accent, if lit { (200.0 * breathe) as u8 } else { 90 })));
             let mark = egui::Rect::from_center_size(egui::pos2(b.left() + 7.0, b.center().y), egui::vec2(4.0, h * 0.5));
@@ -776,8 +786,7 @@ impl App {
                 centered(&tile.detail, detail_size, detail_color, b.center().y + h * 0.17);
             }
 
-            if let Some(action) = tile.action {
-                let resp = ui.interact(b, egui::Id::new(("tile", i)), egui::Sense::click());
+            if let (Some(action), Some(resp)) = (tile.action, &resp) {
                 if resp.clicked() && self.dialog.is_none() {
                     self.dialog = Some(action);
                 }
@@ -928,6 +937,60 @@ fn paint_arc(painter: &egui::Painter, c: egui::Pos2, r: f32, a0: f32, a1: f32, s
     painter.add(egui::Shape::line(pts, stroke));
 }
 
+/// Punkt på kanten av en rundad rektangel, s = 0..1 ett varv medurs från övre vänstra
+/// rakan.
+fn rrect_point(b: egui::Rect, r: f32, s: f32) -> egui::Pos2 {
+    let r = r.min(b.width() / 2.0).min(b.height() / 2.0);
+    let (w, h) = (b.width() - 2.0 * r, b.height() - 2.0 * r);
+    let arc = std::f32::consts::FRAC_PI_2 * r;
+    let perim = 2.0 * (w + h) + 4.0 * arc;
+    let mut d = s.rem_euclid(1.0) * perim;
+    let corner = |c: egui::Pos2, a0: f32, d: f32| {
+        let a = (a0 + 90.0 * d / arc).to_radians();
+        c + egui::vec2(a.cos(), a.sin()) * r
+    };
+    // överkant
+    if d < w { return egui::pos2(b.left() + r + d, b.top()); }
+    d -= w;
+    if d < arc { return corner(egui::pos2(b.right() - r, b.top() + r), -90.0, d); }
+    d -= arc;
+    // högerkant
+    if d < h { return egui::pos2(b.right(), b.top() + r + d); }
+    d -= h;
+    if d < arc { return corner(egui::pos2(b.right() - r, b.bottom() - r), 0.0, d); }
+    d -= arc;
+    // nederkant
+    if d < w { return egui::pos2(b.right() - r - d, b.bottom()); }
+    d -= w;
+    if d < arc { return corner(egui::pos2(b.left() + r, b.bottom() - r), 90.0, d); }
+    d -= arc;
+    // vänsterkant
+    if d < h { return egui::pos2(b.left(), b.bottom() - r - d); }
+    d -= h;
+    corner(egui::pos2(b.left() + r, b.top() + r), 180.0, d.min(arc))
+}
+
+/// Ljus med svans som går runt kanten: huvudet vid `head` (0..1), svansen tonar ut.
+fn paint_border_comet(painter: &egui::Painter, b: egui::Rect, r: f32, head: f32, color: egui::Color32) {
+    let tail = 0.22; // andel av varvet
+    let n = 28;
+    let mut prev: Option<egui::Pos2> = None;
+    for k in 0..=n {
+        let u = k as f32 / n as f32; // 0 = svansens slut, 1 = huvudet
+        let p = rrect_point(b, r, head - tail * (1.0 - u));
+        if let Some(q) = prev {
+            // Ett brett, svagt sken under en smal, stark linje.
+            painter.line_segment([q, p], egui::Stroke::new(6.0_f32 * u, with_alpha(color, (40.0 * u * u) as u8)));
+            painter.line_segment([q, p], egui::Stroke::new(1.0_f32 + 2.0 * u, with_alpha(lighten(color, 0.25 * u), (255.0 * u * u) as u8)));
+        }
+        prev = Some(p);
+    }
+    if let Some(p) = prev {
+        painter.circle_filled(p, 7.0, with_alpha(color, 45));
+        painter.circle_filled(p, 3.0, lighten(color, 0.5));
+    }
+}
+
 /// EKG-kurva som rullar från höger till vänster; nyaste delen är starkast.
 fn paint_ecg(painter: &egui::Painter, rect: egui::Rect, t: f32, color: egui::Color32, alive: bool) {
     // En hjärtslagsperiod: P-våg, QRS-topp, T-våg (0..1 -> -1..1).
@@ -1003,6 +1066,21 @@ mod tests {
         assert_eq!(t.iter().find(|t| t.title == "Internet").unwrap().action, None);
         let t = app.tiles();
         assert_eq!(t.iter().find(|t| t.title == "Pi").unwrap().action, Some(Action::Reboot));
+    }
+
+    #[test]
+    fn ljuset_följer_kanten_utan_hopp() {
+        let b = egui::Rect::from_min_size(egui::pos2(10.0, 20.0), egui::vec2(180.0, 200.0));
+        let n = 2000;
+        let pts: Vec<egui::Pos2> = (0..=n).map(|k| rrect_point(b, 14.0, k as f32 / n as f32)).collect();
+        // Varje punkt ligger på kanten (inom rutan, nära någon sida eller ett hörn).
+        for p in &pts {
+            assert!(b.expand(0.01).contains(*p), "utanför rutan: {p:?}");
+        }
+        // Inga hopp: steget är litet överallt, och varvet slutar där det började.
+        let max_step = pts.windows(2).map(|w| w[0].distance(w[1])).fold(0.0, f32::max);
+        assert!(max_step < 1.0, "hopp på {max_step}");
+        assert!(pts[0].distance(pts[n]) < 0.01);
     }
 
     #[test]
