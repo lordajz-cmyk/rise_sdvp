@@ -51,13 +51,14 @@ done
 LOOP
 chmod 755 "$HOME/.local/bin/statusskarm-loop"
 
-echo "--- sudoers-regel för $ANV (bara de fem kommandona) ---"
+echo "--- sudoers-regel för $ANV (bara de sex kommandona) ---"
 TMP="$(mktemp)"
 cat > "$TMP" <<RULE
 # statusskärmen (rise_sdvp/Linux/StatusSkarm): exakt dessa kommandon, inget annat.
 $ANV ALL=(root) NOPASSWD: /usr/bin/systemctl restart car_client.service
 $ANV ALL=(root) NOPASSWD: /usr/bin/systemctl restart car_rtk.service
 $ANV ALL=(root) NOPASSWD: /usr/bin/systemctl reboot
+$ANV ALL=(root) NOPASSWD: /usr/bin/systemctl poweroff
 $ANV ALL=(root) NOPASSWD: /usr/bin/systemctl restart wg-quick@wg0.service
 $ANV ALL=(root) NOPASSWD: /usr/bin/wg show wg0 latest-handshakes
 RULE

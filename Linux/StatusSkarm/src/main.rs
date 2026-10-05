@@ -4,8 +4,10 @@
 //! 3 min). Tryck var som helst för att hoppa förbi. Sedan sju rutor som uppdateras
 //! var 2:a sekund. Grön = OK, grå = inte OK. CPU-rutan är grön/gul/röd.
 //!
-//! Tryck på Car_Client-, Internet- eller RTK-rutan när den inte är grön, eller på Pi-rutan
-//! (alltid), för att starta om efter en Ja/Nej-fråga. Kommandona körs med
+//! Tryck på Car_Client-, Internet- eller RTK-rutan när den inte är grön för att starta om
+//! efter en Ja/Nej-fråga. Pi-rutan går alltid att trycka på och frågar om Pi:n ska
+//! startas om eller stängas av (stäng av innan strömmen bryts, skyddar SD-kortet).
+//! Kommandona körs med
 //! `sudo -n` och är begränsade av en sudoers-regel (se installera.sh).
 //!
 //! Allt läses lokalt på Pi:n och ingenting här tar Car_Client:s TCP-plats (8300),
@@ -101,7 +103,11 @@ enum Action {
     RestartRtk,
     Reboot,
     RestartWireGuard,
+    Shutdown,
+    /// Pi-rutan: fråga om omstart eller avstängning.
+    PiMenu,
 }
+const ACTIONS: usize = 6;
 
 impl Action {
     fn question(self) -> &'static str {
@@ -110,6 +116,8 @@ impl Action {
             Action::RestartRtk => "Är du säker att du vill starta om RTK-tjänsten (car_rtk)?",
             Action::Reboot => "Är du säker att du vill starta om Pi:n?",
             Action::RestartWireGuard => "Är du säker att du vill starta om internet (WireGuard)?",
+            Action::Shutdown => "Är du säker att du vill stänga av Pi:n?",
+            Action::PiMenu => "Vad vill du göra med Pi:n?",
         }
     }
 
@@ -124,6 +132,11 @@ impl Action {
                 "Tunneln tas ner och upp igen. Fjärranslutningar (RControlStation, ssh) \
                  bryts en kort stund och får anslutas på nytt.",
             ),
+            Action::PiMenu => Some(
+                "Stäng av innan strömmen bryts, det skyddar SD-kortet. Vänta tills skärmen \
+                 är svart och den gröna lampan på Pi:n har slutat blinka. Efter avstängning \
+                 startar Pi:n först när strömmen har varit bruten och slås på igen.",
+            ),
             _ => None,
         }
     }
@@ -136,6 +149,8 @@ impl Action {
             // Samma som wg-quick down + up, men via systemd som äger tunneln, så att
             // wg-quick@wg0 inte står som aktiv när tunneln i själva verket är nere.
             Action::RestartWireGuard => &["sudo", "-n", "/usr/bin/systemctl", "restart", "wg-quick@wg0.service"],
+            Action::Shutdown => &["sudo", "-n", "/usr/bin/systemctl", "poweroff"],
+            Action::PiMenu => &[],
         }
     }
 
@@ -201,7 +216,7 @@ fn main() -> eframe::Result<()> {
                 app.dialog = match std::env::var("STATUSSKARM_DEMO_DIALOG").as_deref() {
                     Ok("car_client") => Some(Action::RestartCarClient),
                     Ok("rtk") => Some(Action::RestartRtk),
-                    Ok("pi") => Some(Action::Reboot),
+                    Ok("pi") => Some(Action::PiMenu),
                     Ok("wireguard") => Some(Action::RestartWireGuard),
                     _ => None,
                 };
@@ -433,8 +448,10 @@ struct App {
     countdown_skipped: bool,
     dialog: Option<Action>,
     /// När respektive omstart trycktes (index = Action::index()).
-    restarted_at: [Option<Instant>; 4],
+    restarted_at: [Option<Instant>; ACTIONS],
     hostname: String,
+    /// Bara i demoläge: skärmbild till STATUSSKARM_SKARMBILD (PPM) efter 3 s, sedan stäng.
+    screenshot_requested: bool,
 }
 
 /// En ruta som ska ritas.
@@ -456,16 +473,20 @@ impl App {
             started: Instant::now(),
             countdown_skipped: false,
             dialog: None,
-            restarted_at: [None; 4],
+            restarted_at: [None; ACTIONS],
             hostname: std::fs::read_to_string("/etc/hostname")
                 .map(|s| s.trim().to_uppercase())
                 .unwrap_or_else(|_| "ROBOT".into()),
+            screenshot_requested: false,
         }
     }
 
     fn run(&mut self, action: Action) {
         self.restarted_at[action.index()] = Some(Instant::now());
         let cmd = action.command();
+        if cmd.is_empty() {
+            return;
+        }
         if self.demo {
             println!("(demo) skulle köra: {}", cmd.join(" "));
             return;
@@ -542,6 +563,7 @@ impl App {
         tiles.push(Tile { title: "RTK Fix", detail: fix_text, big: None, color: ok(fix), pulsing: false, action: None });
 
         let reboot = self.restarting(Action::Reboot);
+        let shutdown = self.restarted_at[Action::Shutdown.index()].is_some();
         let (cpu_color, cpu_big) = match st.cpu_percent {
             None => (BOX_IDLE, "–".to_string()),
             Some(p) => {
@@ -552,11 +574,17 @@ impl App {
         };
         tiles.push(Tile {
             title: "Pi",
-            detail: if reboot { "Startar om...".into() } else { "tryck för omstart".into() },
+            detail: if shutdown {
+                "Stängs av...".into()
+            } else if reboot {
+                "Startar om...".into()
+            } else {
+                "tryck för omstart / stäng av".into()
+            },
             big: Some(cpu_big),
-            color: if reboot { BOX_WARN } else { cpu_color },
-            pulsing: reboot,
-            action: (!reboot).then_some(Action::Reboot),
+            color: if shutdown { BOX_BAD } else if reboot { BOX_WARN } else { cpu_color },
+            pulsing: reboot || shutdown,
+            action: (!reboot && !shutdown).then_some(Action::PiMenu),
         });
         tiles
     }
@@ -801,7 +829,7 @@ impl App {
         let screen = ctx.screen_rect();
 
         let mut close = false;
-        let mut confirmed = false;
+        let mut confirmed: Option<Action> = None;
         egui::Area::new(egui::Id::new("dialog_bg"))
             .order(egui::Order::Foreground)
             .fixed_pos(screen.min)
@@ -831,30 +859,69 @@ impl App {
                                 ui.label(egui::RichText::new(warn).size(big * 0.7).color(egui::Color32::from_rgb(255, 190, 90)));
                             }
                             ui.add_space(26.0);
-                            ui.horizontal(|ui| {
+                            let btn = |txt: &str, fill, bw: f32| {
+                                egui::Button::new(egui::RichText::new(txt).size(big).color(TEXT).strong())
+                                    .fill(fill)
+                                    .rounding(12.0)
+                                    .min_size(egui::vec2(bw, big * 2.4))
+                            };
+                            if action == Action::PiMenu {
+                                // Tre knappar: valet i sig är bekräftelsen.
+                                let bw = (w - 40.0) / 3.0;
+                                ui.horizontal(|ui| {
+                                    if ui.add(btn("Starta om", BOX_WARN, bw)).clicked() {
+                                        confirmed = Some(Action::Reboot);
+                                    }
+                                    if ui.add(btn("Stäng av", BOX_BAD, bw)).clicked() {
+                                        confirmed = Some(Action::Shutdown);
+                                    }
+                                    if ui.add(btn("Avbryt", BOX_IDLE, bw)).clicked() {
+                                        close = true;
+                                    }
+                                });
+                            } else {
                                 let bw = (w - 20.0) / 2.0;
-                                let btn = |txt: &str, fill| {
-                                    egui::Button::new(egui::RichText::new(txt).size(big).color(TEXT).strong())
-                                        .fill(fill)
-                                        .rounding(12.0)
-                                        .min_size(egui::vec2(bw, big * 2.4))
-                                };
-                                if ui.add(btn("Ja", BOX_BAD)).clicked() {
-                                    confirmed = true;
-                                }
-                                if ui.add(btn("Nej", BOX_IDLE)).clicked() {
-                                    close = true;
-                                }
-                            });
+                                ui.horizontal(|ui| {
+                                    if ui.add(btn("Ja", BOX_BAD, bw)).clicked() {
+                                        confirmed = Some(action);
+                                    }
+                                    if ui.add(btn("Nej", BOX_IDLE, bw)).clicked() {
+                                        close = true;
+                                    }
+                                });
+                            }
                         });
                     });
             });
 
-        if confirmed {
+        if let Some(a) = confirmed {
             self.dialog = None;
-            self.run(action);
+            self.run(a);
         } else if close {
             self.dialog = None;
+        }
+    }
+}
+
+impl App {
+    fn demo_screenshot(&mut self, ctx: &egui::Context) {
+        let Some(path) = std::env::var_os("STATUSSKARM_SKARMBILD") else { return };
+        let image = ctx.input(|i| {
+            i.raw.events.iter().find_map(|e| match e {
+                egui::Event::Screenshot { image, .. } => Some(image.clone()),
+                _ => None,
+            })
+        });
+        if let Some(img) = image {
+            let mut ppm = format!("P6\n{} {}\n255\n", img.size[0], img.size[1]).into_bytes();
+            for p in &img.pixels {
+                ppm.extend([p.r(), p.g(), p.b()]);
+            }
+            let _ = std::fs::write(path, ppm);
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        } else if !self.screenshot_requested && self.started.elapsed() > Duration::from_secs(3) {
+            self.screenshot_requested = true;
+            ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot);
         }
     }
 }
@@ -874,6 +941,9 @@ impl eframe::App for App {
                 }
             });
         self.draw_dialog(ctx);
+        if self.demo {
+            self.demo_screenshot(ctx);
+        }
         // Ca 15 bilder/s: räcker för mjuka animationer (hjärtslag, lampor) och är lätt
         // för Pi:n. Står bilden still har skärmen hängt sig.
         ctx.request_repaint_after(Duration::from_millis(66));
@@ -1065,7 +1135,19 @@ mod tests {
         let t = App::new(Arc::new(Mutex::new(st)), true).tiles();
         assert_eq!(t.iter().find(|t| t.title == "Internet").unwrap().action, None);
         let t = app.tiles();
-        assert_eq!(t.iter().find(|t| t.title == "Pi").unwrap().action, Some(Action::Reboot));
+        assert_eq!(t.iter().find(|t| t.title == "Pi").unwrap().action, Some(Action::PiMenu));
+    }
+
+    #[test]
+    fn avstangning_last_pi_rutan() {
+        let mut app = App::new(Arc::new(Mutex::new(Status::default())), true);
+        assert_eq!(Action::Shutdown.command(), &["sudo", "-n", "/usr/bin/systemctl", "poweroff"]);
+        assert!(Action::PiMenu.command().is_empty());
+        app.run(Action::Shutdown);
+        let t = app.tiles();
+        let pi = t.iter().find(|t| t.title == "Pi").unwrap();
+        assert_eq!(pi.detail, "Stängs av...");
+        assert_eq!(pi.action, None);
     }
 
     #[test]
