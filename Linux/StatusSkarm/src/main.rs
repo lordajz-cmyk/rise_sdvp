@@ -74,6 +74,11 @@ const NEON_WARN: egui::Color32 = egui::Color32::from_rgb(255, 184, 48);
 const NEON_BAD: egui::Color32 = egui::Color32::from_rgb(255, 77, 94);
 const NEON_IDLE: egui::Color32 = egui::Color32::from_rgb(92, 104, 124);
 const NEON_CYAN: egui::Color32 = egui::Color32::from_rgb(56, 189, 248);
+/// Dialogens lager: mörk bakgrund över rutorna, knapparna överst. Båda måste ta emot
+/// tryck (egui:s Tooltip-lager gör det inte; då gick trycket på Ja/Stäng av rakt
+/// igenom till bakgrunden och dialogen stängdes utan att något kördes).
+const DIALOG_BG_ORDER: egui::Order = egui::Order::Middle;
+const DIALOG_ORDER: egui::Order = egui::Order::Foreground;
 /// Insamlingen räknas som hängd om ingen runda blivit klar på så länge.
 const DATA_STALE: Duration = Duration::from_secs(8);
 
@@ -831,7 +836,7 @@ impl App {
         let mut close = false;
         let mut confirmed: Option<Action> = None;
         egui::Area::new(egui::Id::new("dialog_bg"))
-            .order(egui::Order::Foreground)
+            .order(DIALOG_BG_ORDER)
             .fixed_pos(screen.min)
             .show(ctx, |ui| {
                 ui.painter().rect_filled(screen, 0.0, egui::Color32::from_black_alpha(190));
@@ -843,7 +848,7 @@ impl App {
         let w = (screen.width() * 0.86).min(700.0);
         let big = (w * 0.06).max(22.0);
         egui::Area::new(egui::Id::new("dialog"))
-            .order(egui::Order::Tooltip)
+            .order(DIALOG_ORDER)
             .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
             .show(ctx, |ui| {
                 egui::Frame::none()
@@ -1136,6 +1141,14 @@ mod tests {
         assert_eq!(t.iter().find(|t| t.title == "Internet").unwrap().action, None);
         let t = app.tiles();
         assert_eq!(t.iter().find(|t| t.title == "Pi").unwrap().action, Some(Action::PiMenu));
+    }
+
+    #[test]
+    fn dialogens_knappar_tar_emot_tryck() {
+        assert!(DIALOG_ORDER.allow_interaction());
+        assert!(DIALOG_BG_ORDER.allow_interaction());
+        // Knapparna ska ligga över bakgrunden, och bakgrunden över rutorna.
+        assert!(DIALOG_ORDER > DIALOG_BG_ORDER && DIALOG_BG_ORDER > egui::Order::Background);
     }
 
     #[test]
