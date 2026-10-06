@@ -10,8 +10,8 @@
 #   ./flash_styrkort_rovmcu.sh --st-link                     tvinga ST-Link
 #   ./flash_styrkort_rovmcu.sh --cm5                         tvinga CM5:ans SWD-ben
 #
-# Firmware: make rovmcu (F9-kortets layout + BMI270, CAN ur tystläge, DI1-4 ut,
-# GPS 2 ur reset; se Embedded/RC_Controller/ROVMCU.md). ELF-filen flashas, så
+# Firmware: make robant BOARD=mp101 (eller mactrac/drangen via --profile).
+# Se Embedded/RC_Controller/ROVMCU.md. ELF-filen flashas, så
 # styrkortets inställningar (EEPROM) behålls.
 #
 # Två sätt att nå STM32:an:
@@ -21,21 +21,26 @@
 # ==============================================================================
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 FW_DIR="$DIR/Embedded/RC_Controller"
-ELF="$FW_DIR/build/fw_rovmcu.elf"
 
 RED='\e[31m'; GREEN='\e[32m'; YELLOW='\e[33m'; BOLD='\e[1m'; NC='\e[0m'
 
-SATT=""; JA=0; BARA_BYGG=0
-for a in "$@"; do
-  case "$a" in
-    --st-link) SATT="stlink" ;;
-    --cm5) SATT="cm5" ;;
-    --ja) JA=1 ;;
-    --bara-bygg) BARA_BYGG=1 ;;
-    -h|--hjalp|--help) sed -n '3,22p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
-    *) echo -e "${RED}Okänt argument: $a${NC}"; exit 1 ;;
+SATT=""; JA=0; BARA_BYGG=0; PROFILE=robant
+ORIGINAL_ARGS=("$@")
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --st-link) SATT="stlink"; shift ;;
+    --cm5) SATT="cm5"; shift ;;
+    --ja) JA=1; shift ;;
+    --bara-bygg) BARA_BYGG=1; shift ;;
+    --profile) [ "$#" -ge 2 ] || exit 1; PROFILE="$2"; shift 2 ;;
+    -h|--hjalp|--help)
+      sed -n '3,22p' "$0" | sed 's/^# \{0,1\}//'
+      echo "  --profile robant|mactrac|drangen (default: robant)"; exit 0 ;;
+    *) echo -e "${RED}Okänt argument: $1${NC}"; exit 1 ;;
   esac
 done
+case "$PROFILE" in robant|mactrac|drangen) ;; *) echo "Unknown profile: $PROFILE" >&2; exit 1 ;; esac
+ELF="$FW_DIR/build/fw_${PROFILE}.elf"
 
 # CM5-benen (BCM-numrering)
 SWCLK=11; SWDIO=8; NRST=17; BOOT0=16
@@ -46,37 +51,37 @@ if [ -z "$SATT" ] && lsusb 2>/dev/null | grep -qi "st-link"; then
 fi
 if [ "$SATT" = "stlink" ]; then
   echo -e "${BOLD}ST-Link hittad: flashar med flash_styrkort.sh.${NC}"
-  ARGS=(--maskin rovmcu --fw-dir "$FW_DIR")
+  ARGS=(--maskin rovmcu --fw-dir "$FW_DIR" --profile "$PROFILE")
   [ "$JA" -eq 1 ] && ARGS+=(--ja)
   [ "$BARA_BYGG" -eq 1 ] && ARGS+=(--bara-bygg)
   exec "$DIR/flash_styrkort.sh" "${ARGS[@]}"
 fi
 
+if [ "$BARA_BYGG" -eq 0 ] && [ "$(id -u)" -ne 0 ]; then
+  exec sudo bash "$0" --cm5 "${ORIGINAL_ARGS[@]}"
+fi
+
 echo -e "${BOLD}Bygger firmware för ROV_MCU...${NC}"
-if ! "$DIR/flash_styrkort.sh" --maskin rovmcu --fw-dir "$FW_DIR" --bara-bygg >/tmp/rovmcu_bygg.log 2>&1; then
-  tail -20 /tmp/rovmcu_bygg.log
-  echo -e "${RED}❌ Bygget misslyckades (hela loggen: /tmp/rovmcu_bygg.log).${NC}"
+BUILD_LOG=$(mktemp /tmp/rovmcu_bygg.XXXXXX.log) || exit 1
+if ! bash "$DIR/flash_styrkort.sh" --maskin rovmcu --profile "$PROFILE" --fw-dir "$FW_DIR" --bara-bygg >"$BUILD_LOG" 2>&1; then
+  tail -20 "$BUILD_LOG"
+  echo -e "${RED}❌ Bygget misslyckades (hela loggen: $BUILD_LOG).${NC}"
   exit 1
 fi
+rm -f "$BUILD_LOG"
+[ -s "$ELF" ] || { echo "Missing firmware ELF: $ELF" >&2; exit 1; }
 echo -e "${GREEN}✅ Byggd: $ELF${NC}"
 [ "$BARA_BYGG" -eq 1 ] && { echo "Klart (--bara-bygg): ingen hårdvara har rörts."; exit 0; }
 
 # --- 2. Flasha via CM5:ans SWD-ben ---------------------------------------------------
-command -v openocd >/dev/null || { echo -e "${RED}openocd saknas: sudo apt install openocd${NC}"; exit 1; }
-
+for TOOL in openocd gpiodetect gpioinfo gpioset pinctrl; do
+  command -v "$TOOL" >/dev/null || { echo "Missing $TOOL; run install_pi.sh --board mp101 first." >&2; exit 1; }
+done
+gpioset --help | grep -q -- '--consumer' || { echo "CM5 flashing requires libgpiod v2." >&2; exit 1; }
 # GPIO-kretsen för 40-stiftsbenen heter "pinctrl-rp1" på Pi 5/CM5 (gpiochip0 eller
 # gpiochip4 beroende på kärnversion).
-CHIP=""
-for n in 0 1 2 3 4 5 6 7 8 9 10 11 12 13; do
-  lbl=$(cat /sys/bus/gpio/devices/gpiochip$n/label 2>/dev/null || true)
-  [ -z "$lbl" ] && lbl=$(gpioinfo gpiochip$n 2>/dev/null | head -1)
-  if echo "$lbl" | grep -q "pinctrl-rp1"; then CHIP=$n; break; fi
-done
-if [ -z "$CHIP" ]; then
-  echo -e "${RED}Hittade inte Pi 5/CM5:ans GPIO-krets (pinctrl-rp1). Är det här en CM5?${NC}"
-  echo "Sätt i en ST-Link och kör med --st-link i stället."
-  exit 1
-fi
+CHIP=$(gpiodetect | sed -n 's/^gpiochip\([0-9][0-9]*\) \[pinctrl-rp1\].*/\1/p')
+[[ "$CHIP" =~ ^[0-9]+$ ]] || { echo "Cannot identify the CM5 pinctrl-rp1 GPIO chip." >&2; exit 1; }
 
 if pgrep -x Car_Client >/dev/null 2>&1; then
   echo -e "${RED}${BOLD}⚠️  Car_Client körs.${NC} Flashningen startar om styrkortet: maskinen ska stå still"
@@ -84,10 +89,30 @@ if pgrep -x Car_Client >/dev/null 2>&1; then
 fi
 if [ "$JA" -ne 1 ]; then
   read -p "Skriv ordet FLASHA för att programmera STM32:an via CM5 (allt annat avbryter): " SVAR
-  [ "$SVAR" = "FLASHA" ] || { echo "Avbrutet — ingenting flashades."; exit 0; }
+  [ "$SVAR" = "FLASHA" ] || { echo "Avbrutet — ingenting flashades."; exit 130; }
 fi
 
-CFG=$(mktemp /tmp/rovmcu_openocd.XXXXXX.cfg)
+CFG=$(mktemp /tmp/rovmcu_openocd.XXXXXX.cfg) || exit 1
+GPIO_LOG=$(mktemp /tmp/rovmcu_gpio.XXXXXX.log) || { rm -f "$CFG"; exit 1; }
+BOOT_PID=""
+RESTORE_GPIO=0
+cleanup_gpio() {
+  local result=$?
+  trap - EXIT
+  if [ -n "$BOOT_PID" ]; then
+    kill "$BOOT_PID" 2>/dev/null || true
+    wait "$BOOT_PID" 2>/dev/null || true
+  fi
+  if [ "$RESTORE_GPIO" -eq 1 ]; then
+    pinctrl set "$BOOT0" op dl || result=1
+    pinctrl set "$NRST" op dh || result=1
+  fi
+  rm -f "$CFG" "$GPIO_LOG"
+  exit "$result"
+}
+trap cleanup_gpio EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 cat > "$CFG" <<EOF
 adapter driver linuxgpiod
 adapter gpio swclk $SWCLK -chip $CHIP
@@ -100,10 +125,26 @@ source [find target/stm32f4x.cfg]
 EOF
 
 # BOOT0 låg (vanlig start från flash) medan vi flashar.
-command -v gpioset >/dev/null && (gpioset gpiochip$CHIP $BOOT0=0 2>/dev/null || gpioset -c gpiochip$CHIP $BOOT0=0 2>/dev/null) &
+gpioset --chip "gpiochip$CHIP" --consumer mp101-boot0 "$BOOT0=0" >"$GPIO_LOG" 2>&1 &
+BOOT_PID=$!
+BOOT_READY=0
+for ATTEMPT in {1..20}; do
+  if ! kill -0 "$BOOT_PID" 2>/dev/null; then break; fi
+  if gpioinfo --chip "gpiochip$CHIP" "$BOOT0" 2>/dev/null | grep -q '"mp101-boot0"'; then
+    BOOT_READY=1
+    break
+  fi
+  sleep 0.05
+done
+if [ "$BOOT_READY" -ne 1 ]; then
+  cat "$GPIO_LOG" >&2
+  echo "Could not hold STM32 BOOT0 low; flashing aborted." >&2
+  exit 1
+fi
+RESTORE_GPIO=1
 
 echo -e "\n${BOLD}Flashar via CM5 (gpiochip$CHIP: SWCLK=$SWCLK SWDIO=$SWDIO NRST=$NRST)...${NC}"
-if sudo openocd -f "$CFG" -c "program $ELF verify reset exit"; then
+if openocd -f "$CFG" -c "program {$ELF} verify reset exit"; then
   echo -e "${GREEN}✅ Flashningen slutförd och verifierad.${NC}"
   RES=0
 else
@@ -111,10 +152,15 @@ else
   echo "   STM32:an har ström. Pröva annars med ST-Link (--st-link)."
   RES=1
 fi
-rm -f "$CFG"
-
 # STM32:ans reset (GPIO17) och BOOT0 (GPIO16) ska ha fasta nivåer när ingen flashar,
 # annars kan Pi:ns standardneddragning på GPIO17 hålla STM32:an i reset.
+kill "$BOOT_PID" 2>/dev/null || true
+wait "$BOOT_PID" 2>/dev/null || true
+BOOT_PID=""
+pinctrl set "$BOOT0" op dl || exit 1
+pinctrl set "$NRST" op dh || exit 1
+RESTORE_GPIO=0
+
 if ! grep -qsE "^gpio=17=op,dh" /boot/firmware/config.txt; then
   echo -e "\n${YELLOW}Tips:${NC} lägg till i /boot/firmware/config.txt (och starta om CM5 en gång):"
   echo "   gpio=17=op,dh   # STM32 NRST hög (kör)"

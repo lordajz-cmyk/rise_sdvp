@@ -90,25 +90,25 @@
  * - CAN-transceivrarna (TCAN1057A) har S-benet kopplat till STM32: hög = bara
  *   lyssna. Låg = normal drift, annars kan kortet inte skicka på CAN.
  * - DI1-4 (SERV_0-3) går via 74AXP1T45 med riktningsben: hög = STM32 -> kontakt.
- *   Ut som på F9-kortet (servo/PWM).
+ *   PB0/PB1/PA2 ut, PA3 in för hjulpulser (PD7 låg).
  * - GPS 2 (U7) har reset på PA15 (aktiv låg): håll den igång. GPS 1 sköts av ublox.c (PC9).
  * - PB3/PB4 är JTAG-ben efter reset; SWD (PA13/PA14) påverkas inte.
  */
 static void rovmcu_board_init(void) {
-	// CAN1 (U32) och CAN2 (U4) ur tystläge
-	palSetPadMode(GPIOB, 15, PAL_MODE_OUTPUT_PUSHPULL);	// SILENT_CAN
+	// CAN1 active; unused CAN2 stays silent.
 	palClearPad(GPIOB, 15);
+	palSetPadMode(GPIOB, 15, PAL_MODE_OUTPUT_PUSHPULL);	// SILENT_CAN
+	palSetPad(GPIOB, 14);
 	palSetPadMode(GPIOB, 14, PAL_MODE_OUTPUT_PUSHPULL);	// SILENT_CAN2
-	palClearPad(GPIOB, 14);
 
-	// DI1-4 som utgångar
+	// PB0/PB1/PA2 are PWM outputs; PA3 is the pulled-up wheel input.
 	palSetPad(GPIOE, 4);	// DIR_U34: DI1 = SERV_0 (PB0)
 	palSetPadMode(GPIOE, 4, PAL_MODE_OUTPUT_PUSHPULL);
 	palSetPad(GPIOB, 3);	// DIR_U38: DI2 = SERV_1 (PB1)
 	palSetPadMode(GPIOB, 3, PAL_MODE_OUTPUT_PUSHPULL);
 	palSetPad(GPIOB, 4);	// DIR_U39: DI3 = SERV_2 (PA2)
 	palSetPadMode(GPIOB, 4, PAL_MODE_OUTPUT_PUSHPULL);
-	palSetPad(GPIOD, 7);	// DIR_U40: DI4 = SERV_3 (PA3)
+	palClearPad(GPIOD, 7);	// DIR_U40: DI4 = SERV_3 (PA3), input
 	palSetPadMode(GPIOD, 7, PAL_MODE_OUTPUT_PUSHPULL);
 
 	// GPS 2 ur reset
@@ -177,6 +177,10 @@ int main(void) {
 	log_set_enabled(main_config.log_en);
 	log_set_name(main_config.log_name);
 	log_set_ext(main_config.log_mode_ext, main_config.log_uart_baud);
+
+#if HAS_BMI270
+	pos_start_imu();
+#endif
 
 	for(;;) {
 		chThdSleepMilliseconds(10);

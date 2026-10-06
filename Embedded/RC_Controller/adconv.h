@@ -27,5 +27,9 @@ void adconv_init(void);
 uint16_t adconv_get_pin(int pin);
 float adconv_get_volts(int pin);
 float adconv_get_vin(void);
+// MP101-only diagnostic. Battery voltage remains adconv_get_vin()/CAN.
+#ifdef IS_ROVMCU
+float adconv_get_5v(void);
+#endif
 
 #endif /* ADCONV_H_ */

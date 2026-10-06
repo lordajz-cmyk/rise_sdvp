@@ -36,6 +36,7 @@ REAL_USER=${SUDO_USER:-$USER}
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
 FW_NAME=""
+PROFILE=""
 PATCH_FILE=""
 BUILD_ONLY=0
 FW_DIR_ARG="${RC_FW_DIR:-}"
@@ -43,11 +44,13 @@ AUTO_JA="${RC_FLASH_JA:-0}"
 
 usage() {
   sed -n '3,25p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+  echo "  --profile robant|mactrac|drangen (with --maskin rovmcu)"
 }
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --maskin)     FW_NAME="$2"; shift 2 ;;
+    --profile)    [ "$#" -ge 2 ] || exit 1; PROFILE="$2"; shift 2 ;;
     --patch)      PATCH_FILE="$2"; shift 2 ;;
     --bara-bygg)  BUILD_ONLY=1; shift ;;
     --fw-dir)     FW_DIR_ARG="$2"; shift 2 ;;
@@ -141,6 +144,17 @@ else
   esac
 fi
 
+MAKE_TARGET="$FW_NAME"
+MAKE_BOARD=()
+if [ -n "$PROFILE" ]; then
+  case "$PROFILE" in robant|mactrac|drangen) ;; *) echo "Unknown profile: $PROFILE" >&2; exit 1 ;; esac
+  [ "$FW_NAME" = rovmcu ] || { echo "--profile requires --maskin rovmcu" >&2; exit 1; }
+fi
+if [ "$FW_NAME" = rovmcu ]; then
+  MAKE_TARGET="${PROFILE:-robant}"
+  MAKE_BOARD=(BOARD=mp101)
+fi
+
 # Med --patch byggs en tillfällig kopia (patchen är skriven med sökvägar som
 # Embedded/RC_Controller/..., så kopian lägger firmware-mappen där). Annars byggs
 # källmappen på plats, precis som förut.
@@ -173,13 +187,13 @@ echo -e "\nKompilerar firmware för ${BOLD}$FW_NAME${NC}..."
 
 # Bygg källkoden (körs som den vanliga användaren för att undvika root-ägda filer)
 if [ "$EUID" -eq 0 ]; then
-  sudo -u "$REAL_USER" bash -c "cd '$FW_DIR' && make clean && make -j\$(nproc) $FW_NAME"
+  sudo -u "$REAL_USER" bash -c 'cd "$1" && make clean && shift && make -j"$(nproc)" "$@"' bash "$FW_DIR" "$MAKE_TARGET" "${MAKE_BOARD[@]}"
 else
-  ( cd "$FW_DIR" && make clean && make -j"$(nproc)" "$FW_NAME" )
+  ( cd "$FW_DIR" && make clean && make -j"$(nproc)" "$MAKE_TARGET" "${MAKE_BOARD[@]}" )
 fi
 BUILD_RC=$?
 
-BIN="$FW_DIR/build/fw_${FW_NAME}.bin"
+BIN="$FW_DIR/build/fw_${MAKE_TARGET}.bin"
 if [ $BUILD_RC -eq 0 ] && [ -f "$BIN" ]; then
   echo -e "${GREEN}✅ Styrkortets firmware ($FW_NAME) kompilerad framgångsrikt!${NC}"
   echo -e "   Fil:    $BIN"
@@ -302,6 +316,9 @@ if [ "$CAR_CLIENT_RUNNING" -eq 1 ]; then
     echo -e "${YELLOW}Läsverktyget (Linux/tools/las_styrkort.py) saknas här. Kontrollera med Read i RControlStation.${NC}"
   fi
   RUN_DIAG="n"
+elif [ "$FW_NAME" = rovmcu ]; then
+  RUN_DIAG="n"
+  echo "MP101 uses the onboard USB hub; check /dev/vehicle and /dev/ublox on its CM5."
 elif [ "$AUTO_JA" = "1" ]; then
   RUN_DIAG="n"
   echo -e "\n${YELLOW}${BOLD}[Steg 3/3] --ja angiven: hoppar över det interaktiva skrivbordstestet.${NC}"
