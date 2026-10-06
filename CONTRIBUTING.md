@@ -42,7 +42,8 @@ Fel som redan kommit in i `master` rättas med `git revert <commit>` eller med e
   `flash_styrkort.sh --maskin <maskin>`. Använd `#ifdef IS_MACTRAC` / `IS_ROBANT` för maskinspecifik kod så att
   de andra maskinernas firmware inte ändras.
 - Bygg **alla** maskiner innan Pull Request, inte bara den du jobbar med.
-- Ny firmware provas först med maskinen **upphissad**, sedan på underlag.
+- Ny firmware provas i steg: på ett **styrkort utan maskin** (bänktest), med maskinen **upphissad**, och sist på
+  underlag. Skriv i Pull Requesten hur långt den är provad.
 - Det som körs ute är märkt med versionstaggar, t.ex. `fw-30.3-mactrac` och `fw-30.3-robant`. Dit kan man alltid
   gå tillbaka.
 

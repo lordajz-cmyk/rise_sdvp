@@ -10,6 +10,7 @@ Kort beskrivning. Den här texten blir dokumentationen för ändringen.
 
 ## Hur är det provat?
 - [ ] Bygger utan fel för de maskiner som berörs
+- [ ] Provat på styrkort **utan maskin** (bänktest, t.ex. med ST-Link/USB): ___
 - [ ] Provat på maskin **upphissad** (hjulen fria): ___
 - [ ] Provat på riktigt underlag: ___
 - [ ] Inte provat på maskin än (skriv varför)
