@@ -22,6 +22,7 @@
 #include <QElapsedTimer>
 #include <QLabel>
 #include <QtWidgets>
+#include <QTableWidget>
 #include <QItemSelection>
 #include <QList>
 #include <QTimer>
@@ -159,7 +160,7 @@ private slots:
     void onSelectedField(const QModelIndex& current, const QModelIndex& previous);
     void onSelectedFieldGeneral(QStandardItemModel *model, QStandardItemModel *modelPth, const QModelIndex& current, const QModelIndex& previous);
     void on_listLogFilesView_clicked(const QModelIndex& index);
-    void onUnconnectedFieldsTableItemClicked(int index);
+    void onUnconnectedFieldsTableItemClicked(QTableWidgetItem *item);
     void onAdminFileSelected(int index);
     void onAddAsFieldButtonClicked();
     void fetchFarmLocationForAdmin(int farmId);
@@ -205,7 +206,9 @@ private slots:
     void fetchFieldsForAdminFarm(int farmId);
     void fetchPathsForAdminField(int fieldId);
     void fetchUnconnectedFields();
+    void fetchUnconnectedFieldsData(int retryCount = 0);
     void parseUnconnectedFieldsXml(const QByteArray &xmlData);
+    void parseUnconnectedFieldsXmlForAdmin(const QByteArray &xmlData);
     void loadAdminPath(int pathId);
     void parseAllFieldsXmlForAdmin(const QByteArray &xmlData);
     void parseAllPathsXmlForAdmin(const QByteArray &xmlData);
@@ -367,6 +370,10 @@ private:
     bool mAreaLoaded = false;
     int mAreaBorderIndex = -1; // Index of the border used for area filtering
 
+    // File administration tab widgets
+    QTableWidget *mUnconnectedFieldsTable;
+    MapWidget *mMapWidgetFileAdmin;
+
     QStandardItemModel *modelPath;
     QStandardItemModel *machinesModel;
     QStandardItemModel *vehicleTypesModel;
@@ -414,8 +421,6 @@ private:
     TcpClientMulti *mTcpClientMulti;
     QNetworkAccessManager *mNetworkManager;
     
-    // File administration tab widgets
-    MapWidget *mMapWidgetFileAdmin;
     QString mVersion;
     rtcm3_state mRtcmState;
     IntersectionTest *mIntersectionTest;

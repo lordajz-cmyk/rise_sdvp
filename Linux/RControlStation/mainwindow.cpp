@@ -24,11 +24,6 @@
 #include <array>
 #include <algorithm>
 #include <QMessageBox>
-#include <QPointer>
-#include <QJsonObject>
-#include <QJsonDocument>
-#include <QGroupBox>
-#include <QVBoxLayout>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QHostInfo>
@@ -51,12 +46,12 @@
 #include <QUrl>
 #include <QUrlQuery>
 #include <QTimer>
-#include <QSettings>
 #include <QLoggingCategory>
 #include <QtSql>
 #include <QtCharts>
 #include <QtWidgets>
 #include <QDir>
+#include <QSettings>
 #include <iostream>
 #include <fstream>
 
@@ -88,20 +83,20 @@
 #endif
 
 #if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
-#define FRONT_UP 5
+#define FRONT_UP 4
 #define FRONT_DOWN 7
-#define REAR_UP 4
-#define REAR_DOWN 6
-// 7: Front Up
-// 5: Front Down
+#define REAR_UP 6
+#define REAR_DOWN 5
+// 4: Front Up
+// 7: Front Down
 // 6: Rear up
-// 4: Rear down
+// 5: Rear down
 #else
-#define FRONT_UP 5
+#define FRONT_UP 4
 #define FRONT_DOWN 7
-#define REAR_UP 4
-#define REAR_DOWN 6
-// 5: Front Up
+#define REAR_UP 6
+#define REAR_DOWN 5
+// 4: Front Up
 // 7: Front Down
 // 4: Rear up
 // 6: Rear down
@@ -152,9 +147,19 @@ MainWindow::MainWindow(QWidget *parent) :
     logPathsModel(nullptr),
     logLogsModel(nullptr)
 {
+    qDebug() << "DEBUG: MainWindow constructor - starting";
     ui->setupUi(this);
+    qDebug() << "DEBUG: MainWindow constructor - UI setup complete";
+    
+    // Load saved server IP from settings
+    QSettings settings("SLU", "RControlStation");
+    QString savedServerIp = settings.value("serverip", "").toString();
+    if (!savedServerIp.isEmpty()) {
+        ui->serveripEdit->setText(savedServerIp);
+    }
     
     // Initialize File Administration tab widgets from UI
+    qDebug() << "DEBUG: MainWindow constructor - initializing File Administration tab";
     mUnconnectedFieldsTable = ui->unconnectedFieldsTable;
     mMapWidgetFileAdmin = ui->mapWidgetFileAdmin;
     
@@ -166,6 +171,7 @@ MainWindow::MainWindow(QWidget *parent) :
     connect(mUnconnectedFieldsTable, &QTableWidget::itemClicked, this, &MainWindow::onUnconnectedFieldsTableItemClicked);
     
     // Create Help menu with Check for Updates action
+    qDebug() << "DEBUG: MainWindow constructor - creating Help menu";
     m_helpMenu = menuBar()->addMenu(tr("Help"));
     m_checkForUpdatesAction = new QAction(tr("Check for Updates"), this);
     connect(m_checkForUpdatesAction, &QAction::triggered, this, &MainWindow::checkForUpdates);
@@ -176,6 +182,7 @@ MainWindow::MainWindow(QWidget *parent) :
     m_helpMenu->addAction(aboutAction);
     
     // Initialize version checker
+    qDebug() << "DEBUG: MainWindow constructor - initializing version checker";
     m_versionChecker = new VersionChecker(this);
     connect(m_versionChecker, &VersionChecker::updateCheckFinished, 
             this, &MainWindow::onUpdateCheckFinished);
@@ -183,11 +190,13 @@ MainWindow::MainWindow(QWidget *parent) :
             this, &MainWindow::onUpdateCheckError);
     
     // Initialize analysis table items (they are defined in UI but need content)
+    qDebug() << "DEBUG: MainWindow constructor - initializing analysis table";
     ui->tableAnalysis->setItem(0, 0, new QTableWidgetItem("Length"));
     ui->tableAnalysis->setItem(1, 0, new QTableWidgetItem("Angle"));
     ui->tableAnalysis->setItem(2, 0, new QTableWidgetItem("Root-Mean-Square"));
 
     // Initialize comboBoxAction from database
+    qDebug() << "DEBUG: MainWindow constructor - populating control state combo boxes";
     populateControlStateComboBoxes();
     
     // Set default value if there are items
@@ -208,7 +217,9 @@ MainWindow::MainWindow(QWidget *parent) :
             this, &MainWindow::onControlSearchCriteriaChanged);
     
     // Initialize the map widget with the default value
+    qDebug() << "DEBUG: MainWindow constructor - initializing map widget";
     on_comboBoxAction_currentIndexChanged(0);
+    qDebug() << "DEBUG: MainWindow constructor - map widget initialized";
     
     ui->mapLiveWidget->setMousePressEventHandler([this](QMouseEvent *e) {
         ui->mapLiveWidget->mousePressEventPaths(e);
@@ -264,6 +275,17 @@ MainWindow::MainWindow(QWidget *parent) :
         ui->mapWidgetAnalysisResult->wheelEventFields(e);
     });
 
+    // Initialize mapWidgetFileAdmin with mouse event handlers
+    ui->mapWidgetFileAdmin->setMousePressEventHandler([this](QMouseEvent *e) {
+        ui->mapWidgetFileAdmin->mousePressEventFields(e);
+    });
+    ui->mapWidgetFileAdmin->setMouseReleaseEventHandler([this](QMouseEvent *e) {
+        ui->mapWidgetFileAdmin->mousePressEventFields(e);
+    });
+    ui->mapWidgetFileAdmin->setWheelEventHandler([this](QWheelEvent *e) {
+        ui->mapWidgetFileAdmin->wheelEventFields(e);
+    });
+
     ui->mapWidgetAnalysisResult->setAnalysisActive(true);
     
     // Debug: Check result map widget initialization
@@ -298,24 +320,24 @@ MainWindow::MainWindow(QWidget *parent) :
     mSupportedFirmwares.append(qMakePair(12, 3));
     mSupportedFirmwares.append(qMakePair(20, 1));
     mSupportedFirmwares.append(qMakePair(30, 1));
-    mSupportedFirmwares.append(qMakePair(30, 2)); // Write-hängningen rättad, heartbeat i sekunder
-    mSupportedFirmwares.append(qMakePair(30, 3)); // + autopiloten sätter körriktningen
 
-    ui->mapStreamNmeaFollowBox->setChecked(true);
-
+    qDebug() << "DEBUG: MainWindow constructor - registering meta types and creating timers";
     qRegisterMetaType<LocPoint>("LocPoint");
     mTimer = new QTimer(this);
     mTimer->start(ui->pollIntervalBox->value());
     mHeartbeatTimer = new QTimer(this);
     mHeartbeatTimer->start(mHeartbeatMS);
+    qDebug() << "DEBUG: MainWindow constructor - timers created";
     mStatusLabel = new QLabel(this);
     ui->statusBar->addPermanentWidget(mStatusLabel);
     mStatusInfoTime = 0;
     mActiveCarId = 0;
     mJoystickControlEnabled = true;
+    qDebug() << "DEBUG: MainWindow constructor - creating network and interface objects";
     mPacketInterface = new PacketInterface(this);
     mSerialPort = new QSerialPort(this);
     mNetworkManager = new QNetworkAccessManager(this);
+    qDebug() << "DEBUG: MainWindow constructor - network objects created";
     mThrottle = 0.0;
     mSteering = 0.0;
     activeCarExists = false;
@@ -334,73 +356,6 @@ MainWindow::MainWindow(QWidget *parent) :
     mJoystickPollTimer = new QTimer(this);
     connect(mJoystickPollTimer, &QTimer::timeout, this, &MainWindow::checkJoystickConnection);
     mJoystickPollTimer->start(5000); // Check every 5 seconds
-
-    // Statusruta i sidopanelen (i det tomma området under anslutningsknapparna)
-    {
-        QGroupBox *statusBox = new QGroupBox("Status", this);
-        QVBoxLayout *statusLayout = new QVBoxLayout(statusBox);
-        statusLayout->setContentsMargins(6, 4, 6, 4);
-        mStatusBoxLabel = new QLabel(statusBox);
-        mStatusBoxLabel->setTextFormat(Qt::RichText);
-        mStatusBoxLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
-        statusLayout->addWidget(mStatusBoxLabel);
-        int idx = ui->verticalLayout->indexOf(ui->verticalSpacer);
-        ui->verticalLayout->insertWidget(idx < 0 ? 3 : idx, statusBox);
-
-        QTimer *statusTimer = new QTimer(this);
-        connect(statusTimer, &QTimer::timeout, this, &MainWindow::updateStatusBox);
-        mRouterNet = new QNetworkAccessManager(this);
-        QTimer *routerTimer = new QTimer(this);
-        connect(routerTimer, &QTimer::timeout, this, &MainWindow::pollRouterSignal);
-        routerTimer->start(5000);
-
-        statusTimer->start(500); // Första uppdateringen först när konstruktorn är klar (mTcpClientMulti skapas senare)
-        mStatusBoxLabel->setText("<b>Lösning:</b> –<br><b>Ping (bil):</b> –");
-    }
-
-    // Kartan börjar där man var senast (sparas när nollpunkten sätts eller en gård
-    // väljs), i stället för den inbyggda startpunkten i Uppsala.
-    {
-        QSettings s("RControlStation", "karta");
-        if (s.contains("senasteLat") && s.contains("senasteLon")) {
-            double lat = s.value("senasteLat").toDouble();
-            double lon = s.value("senasteLon").toDouble();
-            ui->mapLiveWidget->setEnuRef(lat, lon, 0);
-            ui->mapLiveWidget->moveView(0.0, 0.0);
-            qDebug() << "Kartan startar på senaste position:" << lat << lon;
-        }
-    }
-
-    // Redskapets mått (arbetsbredd = avstånd mellan körningarna i ZigZag, och GL-fill)
-    // sparas så att de inte går tillbaka till standard vid varje start.
-    // Standard: MacBot/MacTrac, aggregatet 2,4 m brett och 3,4 m långt.
-    {
-        QSettings s("RControlStation", "redskap");
-        ui->boundsFillSpacingSpinBox->setValue(s.value("zigzagBredd", 2.4).toDouble());
-        ui->implementWidthLineEdit->setText(s.value("bredd", "2.4").toString());
-        ui->implementLengthLineEdit->setText(s.value("langd", "3.4").toString());
-        connect(ui->boundsFillSpacingSpinBox, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
-                this, [](double v) { QSettings("RControlStation", "redskap").setValue("zigzagBredd", v); });
-        connect(ui->implementWidthLineEdit, &QLineEdit::textChanged,
-                this, [](const QString &t) { QSettings("RControlStation", "redskap").setValue("bredd", t); });
-        connect(ui->implementLengthLineEdit, &QLineEdit::textChanged,
-                this, [](const QString &t) { QSettings("RControlStation", "redskap").setValue("langd", t); });
-    }
-
-    // Styrkortet kan byta ENU-referens (t.ex. till basstationen när RTCM 1005 kommer),
-    // så hämta den regelbundet så att kartan och bilen räknar från samma nollpunkt.
-    QTimer *enuSyncTimer = new QTimer(this);
-    connect(enuSyncTimer, &QTimer::timeout, this, [this]() {
-        if (mTcpClientMulti->isAnyConnected() && !ui->mapStreamNmeaZeroEnuBox->isChecked()) {
-            mPacketInterface->getEnuRef(mActiveCarId);
-        }
-    });
-    enuSyncTimer->start(10000);
-
-    // Skicka om aktiva reglagevärden, och nödstoppa om dosan försvinner
-    mRcResendTimer = new QTimer(this);
-    connect(mRcResendTimer, &QTimer::timeout, this, &MainWindow::rcResendTick);
-    mRcResendTimer->start(100);
 #endif
 
     checkboxdelegate=new CheckBoxDelegate(ui->fieldTable);
@@ -435,11 +390,6 @@ MainWindow::MainWindow(QWidget *parent) :
             this, SLOT(packetDataToSend(QByteArray&)));
     connect(mPacketInterface, SIGNAL(stateReceived(quint8,CAR_STATE)),
             this, SLOT(stateReceived(quint8,CAR_STATE)));
-    mVehicle = new VehicleData(this);
-    connect(mPacketInterface, &PacketInterface::packetReceived, this,
-            [this](quint8 id, CMD_PACKET cmd, const QByteArray &pkt) {
-        mVehicle->packetReceived(id, (quint8)cmd, pkt);
-    });
     connect(ui->mapLiveWidget, SIGNAL(posSet(quint8,LocPoint)),
             this, SLOT(mapPosSet(quint8,LocPoint)));
     connect(mPacketInterface, SIGNAL(ackReceived(quint8,CMD_PACKET,QString)),
@@ -455,16 +405,6 @@ MainWindow::MainWindow(QWidget *parent) :
             this, SLOT(enuRx(quint8,double,double,double)));
     connect(mNmea, SIGNAL(clientGgaRx(int,NmeaServer::nmea_gga_info_t)),
             this, SLOT(nmeaGgaRx(int,NmeaServer::nmea_gga_info_t)));
-    connect(mNmea, &NmeaServer::clientLineRx, this, [this](QByteArray line) {
-        if (line.contains("GGA")) {
-            for(QList<CarInterface*>::Iterator it_car = mCars.begin(); it_car != mCars.end(); it_car++) {
-                CarInterface *car = *it_car;
-                if (car->getId() == mActiveCarId || car->getId() == 0) {
-                    car->nmeaReceived(mActiveCarId, line);
-                }
-            }
-        }
-    });
     connect(ui->mapLiveWidget, SIGNAL(routePointAdded(LocPoint)),
             this, SLOT(routePointAdded(LocPoint)));
     connect(ui->mapLiveWidget, SIGNAL(infoTraceChanged(int)),
@@ -498,24 +438,13 @@ MainWindow::MainWindow(QWidget *parent) :
         mPacketInterface->processPacket((unsigned char*)data.data(), data.size());
     });
 
-    connect(mTcpClientMulti, &TcpClientMulti::stateChanged, [this](QString msg, QString ip, bool isError) {
-        showStatusInfo(msg, !isError);
+    connect(mTcpClientMulti, &TcpClientMulti::stateChanged, [this](QString msg, QString ip, bool isGood) {
+        showStatusInfo(msg, isGood);
 
-        if (isError) {
+        if (!isGood) {
             qWarning() << "TCP Error:" << msg << ", ip: " << ip;
             QString all=msg  + ", ip: " + ip;
-            // Bara en felruta i taget, och den blockerar inte. Tidigare öppnade varje
-            // fel en ny modal QMessageBox, och vid död anslutning kom tusentals fel
-            // per minut vilket fick hela skrivbordet att frysa.
-            static QPointer<QMessageBox> tcpErrorBox;
-            if (tcpErrorBox) {
-                tcpErrorBox->setText(all);
-            } else {
-                tcpErrorBox = new QMessageBox(QMessageBox::Warning, "TCP Error", all, QMessageBox::Ok, this);
-                tcpErrorBox->setAttribute(Qt::WA_DeleteOnClose);
-                tcpErrorBox->setModal(false);
-                tcpErrorBox->show();
-            }
+            QMessageBox::warning(this, "TCP Error", all);
             /*
             for (int i = 0; i < ui->carsWidget->count(); ++i) {
                 if (ui->carsWidget->tabText(i) == ip) {
@@ -549,26 +478,40 @@ MainWindow::MainWindow(QWidget *parent) :
     ui->mainTabWidget->removeTab(6);
     ui->mainTabWidget->removeTab(5);
     ui->mainTabWidget->removeTab(4);
-    // Öppna på kartan (i .ui var Farm vald). Valt via fliken, inte index, eftersom
-    // flikar läggs till och tas bort ovan.
-    ui->mainTabWidget->setCurrentWidget(ui->tabMap);
     if (!QSqlDatabase::drivers().contains("QSQLITE"))
             QMessageBox::critical(
                 this,
                 "Unable to load database",
                 "This program needs the SQLITE driver");
+
+    qDebug() << "DEBUG: MainWindow constructor - about to call setupFarmsTable";
     farmsModel = setupFarmsTable(ui->farmTable);
+    qDebug() << "DEBUG: MainWindow constructor - setupFarmsTable completed";
     if (!farmsModel) {
         qDebug() << "ERROR: farmsModel setup failed!";
     }
+    qDebug() << "DEBUG: MainWindow constructor - about to call setupFieldsTable";
     fieldsModel = setupFieldsTable(ui->fieldTable);
     if (!fieldsModel) {
         qDebug() << "ERROR: fieldsModel setup failed!";
     }
+    qDebug() << "DEBUG: MainWindow constructor - fieldsModel setup completed";
+    
+    qDebug() << "DEBUG: MainWindow constructor - about to call setupPathTable";
     modelPath=setupPathTable(ui->pathTable,"paths");
+    qDebug() << "DEBUG: MainWindow constructor - path model setup completed";
     
     // Setup log tab
+    qDebug() << "DEBUG: MainWindow constructor - about to call setupLogTab";
     setupLogTab();
+    qDebug() << "DEBUG: MainWindow constructor - setupLogTab completed";
+    
+    qDebug() << "DEBUG: MainWindow constructor - about to call fetchAllFarmsDataFileAdmin";
+    fetchAllFarmsDataFileAdmin(3);
+    qDebug() << "DEBUG: MainWindow constructor - fetchAllFarmsDataFileAdmin called";
+    
+    // Initial refresh of unconnected fields data - call after UI is fully initialized
+    QTimer::singleShot(100, this, [this]() { fetchUnconnectedFieldsData(); });
     
     // Setup model for tableViewMachines
     machinesModel = new QStandardItemModel(this);
@@ -576,31 +519,7 @@ MainWindow::MainWindow(QWidget *parent) :
     ui->tableViewMachines->setModel(machinesModel);
     ui->tableViewMachines->setSelectionBehavior(QAbstractItemView::SelectRows);
     ui->tableViewMachines->setSelectionMode(QAbstractItemView::SingleSelection);
-    ui->tableViewMachines->setEditTriggers(QAbstractItemView::NoEditTriggers);
     ui->tableViewMachines->installEventFilter(this);
-    connect(ui->tableViewMachines, &QTableView::clicked, this, &MainWindow::onMachinesTableClicked);
-    connect(ui->tableViewMachines, &QTableView::doubleClicked, this, &MainWindow::onMachinesTableDoubleClicked);
-    connect(ui->tableViewMachines->selectionModel(), &QItemSelectionModel::selectionChanged, this, &MainWindow::onMachinesSelectionChanged);
-
-    // Configure and connect the sidebar machinesTable (QTableWidget)
-    ui->machinesTable->setSelectionBehavior(QAbstractItemView::SelectRows);
-    ui->machinesTable->setSelectionMode(QAbstractItemView::SingleSelection);
-    ui->machinesTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    connect(ui->machinesTable, &QTableWidget::clicked, this, &MainWindow::onMachinesTableClicked);
-    connect(ui->machinesTable, &QTableWidget::doubleClicked, this, &MainWindow::onMachinesTableDoubleClicked);
-    connect(ui->machinesTable->selectionModel(), &QItemSelectionModel::selectionChanged, this, &MainWindow::onMachinesSelectionChanged);
-
-    // Make Follow Car and Follow NMEA GPS mutually exclusive to prevent map view conflicts
-    connect(ui->mapFollowBox, &QCheckBox::clicked, this, [this](bool checked) {
-        if (checked) {
-            ui->mapStreamNmeaFollowBox->setChecked(false);
-        }
-    });
-    connect(ui->mapStreamNmeaFollowBox, &QCheckBox::clicked, this, [this](bool checked) {
-        if (checked) {
-            ui->mapFollowBox->setChecked(false);
-        }
-    });
 
     // Setup model for vehicle types
     vehicleTypesModel = new QStandardItemModel(this);
@@ -665,8 +584,10 @@ MainWindow::MainWindow(QWidget *parent) :
     fetchMachinesData();
     fetchVehicleTypes(); // This will call fetchAllMachinesData() when done
     
-    // Initial refresh of unconnected fields data - call after UI is fully initialized
-    QTimer::singleShot(100, this, [this]() { fetchUnconnectedFieldsData(); });
+    // Initial refresh of admin farms data - call after UI is fully initialized
+    // Note: farms are already loaded by fetchAllFarmsDataFileAdmin(3) called earlier
+    
+    qDebug() << "DEBUG: MainWindow constructor - completed successfully";
 }
 
 
@@ -687,18 +608,8 @@ MainWindow::~MainWindow()
     }
 
 #if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
-    // Stoppa allt som anropar SDL innan SDL stängs, annars kan en timer
-    // använda en redan frigjord controller (segfault i libSDL2 vid avslut).
-    if (mRcResendTimer) {
-        mRcResendTimer->stop();
-    }
-    if (mTimer) {
-        mTimer->stop();
-    }
-    mLastActionValues.clear();
     if (mController) {
         SDL_GameControllerClose(mController);
-        mController = nullptr;
     }
     SDL_Quit();
 #endif
@@ -712,6 +623,25 @@ MainWindow::~MainWindow()
 #endif
     
     delete ui;
+}
+
+void MainWindow::closeEvent(QCloseEvent *event)
+{
+    // Save server IP setting before closing
+    QSettings settings("SLU", "RControlStation");
+    settings.setValue("serverip", ui->serveripEdit->text());
+    
+    QMainWindow::closeEvent(event);
+}
+
+QString MainWindow::getServerBaseUrl() const
+{
+    QString ip = ui->serveripEdit->text();
+    // Ensure the URL has the proper format (add http:// if missing)
+    if (!ip.startsWith("http://") && !ip.startsWith("https://")) {
+        return "http://" + ip;
+    }
+    return ip;
 }
 
 void MainWindow::checkForUpdates()
@@ -928,7 +858,7 @@ bool MainWindow::eventFilter(QObject *object, QEvent *e)
                                 qDebug() << "Deleting machine with ID:" << machineId;
                                 
                                 // Send DELETE request to remove the machine
-                                QUrl url("http://192.168.200.1:8080/remove_machine");
+                                QUrl url(getServerBaseUrl() + "/remove_machine");
                                 QUrlQuery query;
                                 query.addQueryItem("id", machineId);
                                 url.setQuery(query);
@@ -1043,7 +973,7 @@ void MainWindow::updateFarms()
 void MainWindow::populateControllerComboBoxes()
 {
     // Query to get all actions from database
-    QSqlQuery query("SELECT id, name FROM controls", db.getDb());
+    QSqlQuery query("SELECT id, name FROM actions", db.getDb());
     
     if (!query.exec()) {
         qDebug() << "Query error:" << query.lastError().text();
@@ -1123,7 +1053,6 @@ QList<QPair<int, QString>> MainWindow::getMotorTypesFromDatabase()
         motorTypes.append(QPair<int, QString>(id, name));
     }
 
-    qDebug() << "Loaded" << motorTypes.size() << "motor types from database";
     return motorTypes;
 }
 
@@ -1133,7 +1062,7 @@ QList<QPair<int, QString>> MainWindow::getActionsFromDatabase()
     QList<QPair<int, QString>> actions;
 
     // Query to get all actions from database
-    QSqlQuery query("SELECT id, name FROM controls", db.getDb());
+    QSqlQuery query("SELECT id, name FROM actions", db.getDb());
 
     if (!query.exec()) {
         qDebug() << "Actions query error:" << query.lastError().text();
@@ -1147,7 +1076,6 @@ QList<QPair<int, QString>> MainWindow::getActionsFromDatabase()
         actions.append(QPair<int, QString>(id, name));
     }
 
-    qDebug() << "Loaded" << actions.size() << "actions from database";
     return actions;
 }
 
@@ -1157,7 +1085,7 @@ QList<std::tuple<int, QString, QString>> MainWindow::getActionsWithColoursFromDa
     QList<std::tuple<int, QString, QString>> actions;
 
     // Query to get all actions with their colours from database
-    QSqlQuery query("SELECT id, name, colour FROM controls", db.getDb());
+    QSqlQuery query("SELECT id, name, colour FROM actions", db.getDb());
 
     if (!query.exec()) {
         qDebug() << "Actions with colours query error:" << query.lastError().text();
@@ -1221,7 +1149,6 @@ QList<QPair<int, QString>> MainWindow::getModesFromDatabase()
         modes.append(QPair<int, QString>(id, name));
     }
 
-    qDebug() << "Loaded" << modes.size() << "modes from database";
     return modes;
 }
 
@@ -1240,12 +1167,10 @@ void MainWindow::loadControllerSettingsFromDatabase()
     
     // Create a map to store controller settings
     QMap<int, int> controllerSettings;
-    mCachedControllerActions.clear();
     while (query.next()) {
         int controllerId = query.value(0).toInt();
         int actionId = query.value(1).toInt();
         controllerSettings[controllerId] = actionId;
-        mCachedControllerActions[controllerId] = actionId;
     }
     
     // Set the combo box values based on database settings
@@ -1311,23 +1236,19 @@ void MainWindow::saveControllerSettingsToDatabase()
         }
         
         if (comboBox) {
-            if (comboBox->currentIndex() > 0) { // Index 0 is "-- None --", so > 0 is a valid action!
+            if (comboBox->currentIndex() >= 0) {
                 // Valid selection - save to database
                 int actionId = comboBox->itemData(comboBox->currentIndex()).toInt();
                 query.bindValue(":id", i);
                 query.bindValue(":action", actionId);
                 
-                mCachedControllerActions[i] = actionId;
-
                 if (!query.exec()) {
                     qDebug() << "Failed to save controller" << i << ":" << query.lastError().text();
                 } else {
                     qDebug() << "Saved controller" << i << "-> action" << actionId;
                 }
             } else {
-                // No selection (index 0 or -1) - remove from database
-                mCachedControllerActions.remove(i);
-                
+                // No selection (index -1) - remove from database
                 QSqlQuery deleteQuery(db.getDb());
                 if (!deleteQuery.prepare("DELETE FROM controllers WHERE id = :id")) {
                     qDebug() << "Failed to prepare delete for controller" << i;
@@ -1344,35 +1265,6 @@ void MainWindow::saveControllerSettingsToDatabase()
     }
 }
 
-static QString getControllerAsciiBar(float value, bool is_axis) {
-    int width = 10;
-    if (is_axis) {
-        // Range -1.0 to 1.0
-        int pos = (int)((value + 1.0f) / 2.0f * width);
-        if (pos < 0) pos = 0;
-        if (pos >= width) pos = width - 1;
-        QString bar = "[";
-        for (int i = 0; i < width; i++) {
-            if (i == pos) bar += "O";
-            else bar += "-";
-        }
-        bar += "]";
-        return bar;
-    } else {
-        // Range 0.0 to 1.0
-        int pos = (int)(value * width);
-        if (pos < 0) pos = 0;
-        if (pos > width) pos = width;
-        QString bar = "[";
-        for (int i = 0; i < width; i++) {
-            if (i < pos) bar += "#";
-            else bar += " ";
-        }
-        bar += "]";
-        return bar;
-    }
-}
-
 void MainWindow::handleControllerInput(int controllerNumber, float value)
 {
     // Validate controller number (1-8)
@@ -1380,65 +1272,29 @@ void MainWindow::handleControllerInput(int controllerNumber, float value)
         qDebug() << "Invalid controller number:" << controllerNumber << "- must be 1-8";
         return;
     }
+    qDebug() << "Controller idr:" << controllerNumber;
+
+    // Get the action ID for this controller from the database
+    QSqlQuery query(db.getDb());
+    query.prepare("SELECT action FROM controllers WHERE id = ?");
+    query.bindValue(0, controllerNumber);
     
-    // Dödzon: små värden runt mitten blir exakt 0, så att ett släppt reglage alltid
-    // hamnar på 0 hos roboten (annars kunde 0.015 bli kvar och roboten krypa).
-    if (qAbs(value) < 0.02f) {
-        value = 0.0f;
+    if (!query.exec()) {
+        qDebug() << "Failed to query controller action:" << query.lastError().text();
+        return;
     }
-
-    // Jitterfilter: skicka inte små ändringar, men en övergång till 0 skickas alltid.
-    // Ett stillastående reglage skickas om av rcResendTick() så att VESC:ernas
-    // timeout inte stänger av motorn medan spaken hålls stilla.
-    if (mCachedControllerValues.contains(controllerNumber)) {
-        float last = mCachedControllerValues[controllerNumber];
-        bool unchanged = (value == 0.0f) ? (last == 0.0f) : (qAbs(last - value) < 0.02f);
-        if (unchanged) {
-            return;
-        }
-    }
-    mCachedControllerValues[controllerNumber] = value;
     
-    // qDebug() << "Controller idr:" << controllerNumber;
-
-    // Update the label text with dynamic ASCII feedback bar in real-time
-    switch (controllerNumber) {
-        case 1:
-            ui->label_9->setText(QString("Left flip %1").arg(getControllerAsciiBar(value, true))); // L1 +1, L2 -1
-            break;
-        case 3:
-            ui->label_10->setText(QString("Right flip %1").arg(getControllerAsciiBar(value, true))); // R1 +1, R2 -1
-            break;
-        case 5:
-            ui->label_4->setText(QString("Left control stick - up/down %1").arg(getControllerAsciiBar(value, true)));
-            break;
-        case 6:
-            ui->label_5->setText(QString("Left control stick - right/left %1").arg(getControllerAsciiBar(value, true)));
-            break;
-        case 7:
-            ui->label_7->setText(QString("Right control stick - up/down %1").arg(getControllerAsciiBar(value, true)));
-            break;
-        case 8:
-            ui->label_8->setText(QString("Right control stick - right/left %1").arg(getControllerAsciiBar(value, true)));
-            break;
-    }
-
-    // Get the action ID for this controller from the cache (avoids 100+ SQL queries/second which hangs the UI thread!)
-    if (mCachedControllerActions.contains(controllerNumber)) {
+    if (query.next()) {
         // Controller has a configured action
-        int actionId = mCachedControllerActions[controllerNumber];
+        int actionId = query.value(0).toInt();
+        qDebug() << "Controller" << controllerNumber << "has action" << actionId 
+                 << "with value" << value;
         
         // Call controllerAction with:
         // - car: mActiveCarId (the currently selected active car)
         // - iAction: the action ID from the database
         // - value: the input value passed to this function
-        float scaled = value*ui->throttleMaxBox->value();
-        if (scaled == 0.0f) {
-            mLastActionValues.remove(actionId);
-        } else {
-            mLastActionValues[actionId] = scaled;
-        }
-        controllerAction(mActiveCarId, actionId, scaled);
+        controllerAction(mActiveCarId, actionId, value*ui->throttleMaxBox->value());
     } else {
         // No action configured for this controller
         qDebug() << "Controller" << controllerNumber << "has no configured action - ignoring input";
@@ -1500,6 +1356,7 @@ void MainWindow::handleControllerInput(int controllerNumber, float value)
 
 QStandardItemModel* MainWindow::setupFarmsTable(QTableView* uiFarmTable)
 {
+    qDebug() << "DEBUG: setupFarmsTable - starting, uiFarmTable:" << uiFarmTable;
     if (!uiFarmTable) {
         qDebug() << "ERROR: uiFarmTable is null in setupFarmsTable!";
         return nullptr;
@@ -1543,7 +1400,9 @@ QStandardItemModel* MainWindow::setupFarmsTable(QTableView* uiFarmTable)
     connect(uiFarmTable->selectionModel(), &QItemSelectionModel::currentRowChanged, mapperFarm, &QDataWidgetMapper::setCurrentModelIndex);
     
     // Fetch initial data from webserver
+    qDebug() << "DEBUG: setupFarmsTable - about to call fetchAllFarmsData";
     fetchAllFarmsData();
+    qDebug() << "DEBUG: setupFarmsTable - fetchAllFarmsData called";
     
     return model;
 }
@@ -1592,6 +1451,7 @@ QStandardItemModel* MainWindow::setupFarmsTable(QTableView* uiFarmTable)
 
 QStandardItemModel* MainWindow::setupFieldsTable(QTableView* uiFieldTable)
 {
+    qDebug() << "DEBUG: setupFieldsTable - starting, uiFieldTable:" << uiFieldTable;
     if (!uiFieldTable) {
         qDebug() << "ERROR: uiFieldTable is null in setupFieldsTable!";
         return nullptr;
@@ -1662,10 +1522,12 @@ void MainWindow::setupLogTab()
     qDebug() << "Setting up log tab...";
     
     // Initialize models for log tab dropdowns
+    qDebug() << "DEBUG: setupLogTab - creating log models";
     logFarmsModel = new QStandardItemModel(this);
     logFieldsModel = new QStandardItemModel(this);
     logPathsModel = new QStandardItemModel(this);
     logLogsModel = new QStandardItemModel(this);
+    qDebug() << "DEBUG: setupLogTab - log models created";
     
     // Set up combo boxes
     ui->comboBoxLogFarm->setModel(logFarmsModel);
@@ -1677,11 +1539,44 @@ void MainWindow::setupLogTab()
     connect(ui->comboBoxLogFarm, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::onFarmSelectedForLog);
     connect(ui->comboBoxLogField, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::onFieldSelectedForLog);
     connect(ui->comboBoxLogPath, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::onPathSelectedForLog);
+
+    // Initialize models for file admin tab dropdowns
+    qDebug() << "DEBUG: setupLogTab - creating admin models";
+    adminFarmsModel = new QStandardItemModel(this);
+    adminFieldsModel = new QStandardItemModel(this);
+    adminPathsModel = new QStandardItemModel(this);
+    adminFilesModel = new QStandardItemModel(this);
+    qDebug() << "DEBUG: setupLogTab - admin models created, adminFilesModel:" << adminFilesModel;
+    
+    // Set up combo boxes
+    ui->comboBoxAdminFarm->setModel(adminFarmsModel);
+    ui->comboBoxAdminField->setModel(adminFieldsModel);
+    ui->comboBoxAdminPath->setModel(adminPathsModel);
+    ui->comboBoxAdminFile->setModel(adminFilesModel);
+    qDebug() << "DEBUG: setupLogTab - adminFilesModel set on comboBoxAdminFile";
+    
+    // Connect signals
+    connect(ui->comboBoxAdminFarm, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::onFarmSelectedForAdmin);
+    connect(ui->comboBoxAdminField, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::onFieldSelectedForAdmin);
+    connect(ui->comboBoxAdminPath, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::onPathSelectedForAdmin);
+    connect(ui->comboBoxAdminFile, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::onAdminFileSelected);
     connect(ui->comboBoxLog, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::onLogSelectedForLog);
     connect(ui->pushButtonLoadLog, &QPushButton::clicked, this, &MainWindow::onLoadLogButtonClicked);
+    connect(ui->addasFieldButton, &QPushButton::clicked, this, &MainWindow::onAddAsFieldButtonClicked);
+    
+    // Load unconnected fields
+    qDebug() << "DEBUG: About to call fetchUnconnectedFieldsData";
+    fetchUnconnectedFieldsData();
+
+    // Initialize mapWidgetFileAdmin with a reasonable default scale factor
+    // If no border is loaded, set a zoom matching a width of about 500 m -> scalefactor=0.5/500=0.001
+    ui->mapWidgetFileAdmin->moveView(0, 0);
+    ui->mapWidgetFileAdmin->setScaleFactor(0.001);
     
     // Fetch initial data
+    qDebug() << "DEBUG: setupLogTab - about to call fetchAllFarmsForLog";
     fetchAllFarmsForLog();
+    qDebug() << "DEBUG: setupLogTab - fetchAllFarmsForLog called";
     
     qDebug() << "Log tab setup complete";
 }
@@ -1724,6 +1619,7 @@ void MainWindow::setupLogTab()
 
 QStandardItemModel* MainWindow::setupPathTable(QTableView* uiPathTable,QString sqlTablename)
 {
+    qDebug() << "DEBUG: setupPathTable - starting, uiPathTable:" << uiPathTable << "sqlTablename:" << sqlTablename;
     if (!uiPathTable) {
         qDebug() << "ERROR: uiPathTable is null in setupPathTable!";
         return nullptr;
@@ -1787,17 +1683,13 @@ void MainWindow::onSelectedFarm(const QModelIndex& current, const QModelIndex& p
     ui->mapWidgetFields->setEnuRef(llh[0],llh[1],0);
     ui->mapWidgetAnalysis->setEnuRef(llh[0],llh[1],0);
     ui->mapWidgetAnalysisResult->setEnuRef(llh[0],llh[1],0);
+    ui->mapWidgetFileAdmin->setEnuRef(llh[0],llh[1],0);
 
     qDebug() << "lat: " << llh[0];
     qDebug() << "lon: " << llh[1];
 
     mPacketInterface->setEnuRef(ui->mapCarBox->value(), llh);
 //    setEnuRef(quint8 id, double *llh, int retries)
-
-    // Ett eget gårdsval gäller fram till nästa anslutning: avbryt den automatiska
-    // nollpunkten om GPS-positionen inte hunnit komma, och kom ihåg platsen.
-    mAutoEnuRefPending = false;
-    saveMapPosition(llh[0], llh[1]);
 
     ui->mapWidgetFields->clearAllFields();
     ui->mapWidgetFields->clearAllPaths();
@@ -1894,23 +1786,109 @@ void MainWindow::onSelectedFieldGeneral(QStandardItemModel *model, QStandardItem
     //       mapFields->setRouteNow();   // Make sure that no route is set automatically (in order to make it easier to edit)
 }
 
-void MainWindow::onUnconnectedFieldsTableItemClicked(QTableWidgetItem *item)
+
+void MainWindow::onAddAsFieldButtonClicked()
 {
-    qDebug() << "onUnconnectedFieldsTableItemClicked: called";
+    qDebug() << "onAddAsFieldButtonClicked: Add as Field button clicked";
     
-    if (!item || !mUnconnectedFieldsTable || !mMapWidgetFileAdmin) {
-        qDebug() << "ERROR: Invalid parameters in onUnconnectedFieldsTableItemClicked";
+    // Get the selected filename from comboBoxAdminFile
+    QString storedinfile = ui->comboBoxAdminFile->currentText();
+    if (storedinfile.isEmpty()) {
+        qDebug() << "ERROR: No file selected in comboBoxAdminFile";
+        showStatusInfo("Error: Please select a file first", false);
         return;
     }
     
-    int row = item->row();
-    QTableWidgetItem *filenameItem = mUnconnectedFieldsTable->item(row, 0);
-    if (!filenameItem) {
-        qDebug() << "ERROR: No filename item at row" << row;
+    // Get the selected farm from comboBoxAdminFarm
+    QString location = ui->comboBoxAdminFarm->currentText();
+    if (location.isEmpty()) {
+        qDebug() << "ERROR: No farm selected in comboBoxAdminFarm";
+        showStatusInfo("Error: Please select a farm first", false);
         return;
     }
     
-    QString filename = filenameItem->text();
+    // Use the filename (without extension) as the field name by default
+    // Remove the .xml extension if present
+    QString name = storedinfile;
+    if (name.endsWith(".xml", Qt::CaseInsensitive)) {
+        name = name.left(name.length() - 4);
+    }
+    
+    qDebug() << "Adding field with name:" << name << ", location:" << location << ", storedinfile:" << storedinfile;
+    
+    // Prepare the POST request to /add_field
+    QUrl url(QString("%1/add_field").arg(getServerBaseUrl()));
+    qDebug() << "POST URL:" << url.toString();
+    
+    QNetworkRequest request(url);
+    request.setTransferTimeout(10000);
+    
+    // Prepare form data
+    QUrlQuery postData;
+    postData.addQueryItem("name", name);
+    postData.addQueryItem("location", location);
+    postData.addQueryItem("storedinfile", storedinfile);
+    
+    // Send as POST with form data
+    QNetworkReply* reply = mNetworkManager->post(request, postData.toString(QUrl::FullyEncoded).toUtf8());
+    
+    if (!reply) {
+        qDebug() << "ERROR: Network request failed for" << url.toString();
+        showStatusInfo("Network error: Could not add field", false);
+        return;
+    }
+    
+    // Show loading state
+    showStatusInfo("Adding field...", true);
+    
+    connect(reply, &QNetworkReply::finished, this, [this, reply, name, location, storedinfile]() {
+        int statusCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        qDebug() << "add_field HTTP Status Code:" << statusCode;
+        
+        if (reply->error() == QNetworkReply::NoError && (statusCode == 201 || statusCode == 200)) {
+            QByteArray response = reply->readAll();
+            qDebug() << "Field added successfully:" << response;
+            showStatusInfo("Field '" + name + "' added successfully", true);
+            
+            // Refresh the fields list for the selected farm
+            QStandardItem* farmItem = adminFarmsModel->item(ui->comboBoxAdminFarm->currentIndex());
+            if (farmItem) {
+                QString farmId = farmItem->data(Qt::UserRole).toString();
+                if (!farmId.isEmpty()) {
+                    fetchFieldsForAdminFarm(farmId.toInt());
+                }
+            }
+        } else {
+            QString errorMsg = reply->errorString();
+            if (statusCode != 200 && statusCode != 201 && statusCode > 0) {
+                errorMsg = QString("HTTP %1").arg(statusCode);
+            }
+            QByteArray response = reply->readAll();
+            if (!response.isEmpty()) {
+                errorMsg += ": " + QString(response);
+            }
+            qDebug() << "Error adding field:" << errorMsg;
+            showStatusInfo("Error adding field: " + errorMsg, false);
+        }
+        reply->deleteLater();
+    });
+}
+
+void MainWindow::onAdminFileSelected(int index)
+{
+    qDebug() << "onAdminFileSelected: called with index:" << index;
+    
+    if (index < 0 || !mMapWidgetFileAdmin) {
+        qDebug() << "ERROR: Invalid parameters in onAdminFileSelected";
+        return;
+    }
+    
+    // Get the filename from the combo box
+    QString filename = ui->comboBoxAdminFile->currentText();
+    if (filename.isEmpty()) {
+        qDebug() << "ERROR: No filename selected";
+        return;
+    }
     qDebug() << "File administration: Loading file:" << filename;
     
     // Clear the map first
@@ -1919,7 +1897,7 @@ void MainWindow::onUnconnectedFieldsTableItemClicked(QTableWidgetItem *item)
     mMapWidgetFileAdmin->update();
     
     // Load the file from the server via HTTP
-    QUrl url(QString("http://192.168.200.1:8080/field/%1").arg(filename));
+    QUrl url(QString("%1/field/%2").arg(getServerBaseUrl()).arg(filename));
     qDebug() << "Fetching field from URL:" << url.toString();
     
     QNetworkRequest request(url);
@@ -1954,13 +1932,15 @@ void MainWindow::onUnconnectedFieldsTableItemClicked(QTableWidgetItem *item)
                     // Center the view on the loaded data
                     if (mMapWidgetFileAdmin->getFieldNum() > 0) {
                         std::array<double, 4> extremes = mMapWidgetFileAdmin->findExtremeValuesFieldBorders();
-                        double offsetx = (extremes[0] + extremes[1]) / 2.0;
-                        double offsety = (extremes[2] + extremes[3]) / 2.0;
-                        double scalex = 1.0 / (extremes[1] - extremes[0]);
-                        double scaley = 1.0 / (extremes[3] - extremes[2]);
+                        double fieldareawidth_m = extremes[2] - extremes[0];
+                        double fieldareaheight_m = extremes[3] - extremes[1];
+                        double offsetx_m = (extremes[2] + extremes[0]) / 2;
+                        double offsety_m = (extremes[3] + extremes[1]) / 2;
+                        double scalex = 0.5 / (fieldareawidth_m);
+                        double scaley = 0.5 / (fieldareaheight_m);
                         
-                        mMapWidgetFileAdmin->moveView(offsetx, offsety);
-                        mMapWidgetFileAdmin->setScaleFactor(std::min(scalex, scaley) * 0.9);
+                        mMapWidgetFileAdmin->moveView(offsetx_m, offsety_m);
+                        mMapWidgetFileAdmin->setScaleFactor(std::min(scalex, scaley));
                         mMapWidgetFileAdmin->update();
                     }
                 } else {
@@ -2041,13 +2021,10 @@ bool MainWindow::connectJoystick()
             qDebug() << "Game controller connected:" << SDL_GameControllerName(controller);
             mController = controller;
 
-            // Set up a timer to poll for gamepad events (make it static so it is only created once)
-            static QTimer* timer = nullptr;
-            if (!timer) {
-                timer = new QTimer(this);
-                connect(timer, &QTimer::timeout, this, &MainWindow::pollGamepad);
-                timer->start(16); // Poll every 16ms
-            }
+            // Set up a timer to poll for gamepad events
+            QTimer* timer = new QTimer(this);
+            connect(timer, &QTimer::timeout, this, &MainWindow::pollGamepad);
+            timer->start(16); // Poll every 16ms
 
             connectJs=true;
         } else {
@@ -2314,222 +2291,13 @@ void MainWindow::timerSlot()
 bool MainWindow::JSconnected()
 {
     #if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
-        return gamepadAttached();
+        int joystickIndex=0;
+        return SDL_JoystickGetAttached(SDL_JoystickOpen(joystickIndex)) == SDL_TRUE;
     #else
     return mJoystick->isConnected();
     #endif
 };
 #endif
-void MainWindow::updateStatusBox()
-{
-    if (!mStatusBoxLabel) {
-        return;
-    }
-
-    QString gps;
-    if (!mHaveGga || mGgaAge.elapsed() > 3000) {
-        gps = "<b>Lösning:</b> <span style='color:#c00'>ingen GPS-data</span>";
-    } else {
-        QString sol;
-        QString col;
-        switch (mLastGga.fix_type) {
-        case 4: sol = "RTK fix"; col = "#080"; break;
-        case 5: sol = "RTK float"; col = "#c70"; break;
-        case 2: sol = "DGPS"; col = "#c70"; break;
-        case 1: sol = "SPP"; col = "#c00"; break;
-        case 6: sol = "Dead reckoning"; col = "#c00"; break;
-        default: sol = "Ingen fix"; col = "#c00"; break;
-        }
-        bool rtk = (mLastGga.fix_type == 4 || mLastGga.fix_type == 5);
-        gps = QString("<b>Lösning:</b> <span style='color:%1'><b>%2</b></span><br>"
-                      "<b>Satelliter:</b> %3 (RTK: %4)<br>"
-                      "<b>Korr. ålder:</b> %5")
-                .arg(col, sol)
-                .arg(mLastGga.n_sat)
-                .arg(rtk ? mLastGga.n_sat : 0)
-                .arg(mLastGga.diff_age > 0.0 ? QString::number(mLastGga.diff_age, 'f', 1) + " s" : QString("–"));
-    }
-
-    QString link;
-    if (!mTcpClientMulti->isAnyConnected()) {
-        link = "<b>Ping (bil):</b> <span style='color:#c00'>ej ansluten</span>";
-    } else if (!mStateAge.isValid() || mStateAge.elapsed() > 3000) {
-        link = "<b>Ping (bil):</b> <span style='color:#c00'>inget svar</span>";
-    } else {
-        int rtt = mPacketInterface->lastStateRttMs();
-        QString col = rtt < 0 ? "#000" : (rtt < 150 ? "#080" : (rtt < 500 ? "#c70" : "#c00"));
-        link = QString("<b>Ping (bil):</b> <span style='color:%1'>%2</span>")
-                .arg(col, rtt < 0 ? QString("–") : QString::number(rtt) + " ms");
-    }
-
-    // 4G/5G-raden visas bara när router_signal.py körs på Pi:n (valfritt tillägg)
-    QString router;
-    if (!mRouterLine.isEmpty() && mRouterAge.isValid() && mRouterAge.elapsed() < 15000) {
-        router = "<br>" + mRouterLine;
-    }
-
-    // Fordonsdata (batteri, räckvidd, styrning, lutning, fel) och körlogg.
-    QString vehicle;
-    if (mVehicle) {
-        bool connected = mTcpClientMulti->isAnyConnected();
-        mVehicle->tick(connected);
-        if (connected && mStateAge.isValid() && mStateAge.elapsed() < 3000) {
-            if (mVehicle->wantAngleQuery()) {
-                mPacketInterface->sendTerminalCmd(mVehicle->carId(), "vinkel");
-            }
-            if (mVehicle->wantVescQuery()) {
-                QByteArray p;
-                p.append((char)mVehicle->carId());
-                p.append((char)140); // CMD_GET_VESC_STATUS
-                mPacketInterface->sendPacket(p);
-            }
-        }
-        QString h = mVehicle->html();
-        if (!h.isEmpty()) {
-            vehicle = "<hr>" + h;
-        }
-    }
-
-    mStatusBoxLabel->setText(gps + "<br>" + link + router + vehicle);
-}
-
-// Hämtar routerns mottagning från router_signal.py på Pi:n (port 8310).
-void MainWindow::pollRouterSignal()
-{
-    if (mConnectedIp.isEmpty() || !mTcpClientMulti->isAnyConnected()) {
-        return;
-    }
-
-    QNetworkRequest req(QUrl(QString("http://%1:8310/").arg(mConnectedIp)));
-    req.setTransferTimeout(3000);
-    QNetworkReply *reply = mRouterNet->get(req);
-    connect(reply, &QNetworkReply::finished, this, [this, reply]() {
-        reply->deleteLater();
-        if (reply->error() != QNetworkReply::NoError) {
-            mRouterLine.clear(); // router_signal körs inte på Pi:n – visa ingen rad alls
-            return;
-        }
-
-        QJsonObject o = QJsonDocument::fromJson(reply->readAll()).object();
-        if (!o.value("ok").toBool()) {
-            mRouterLine = QString("<b>4G/5G:</b> <span style='color:#c00'>%1</span>")
-                    .arg(o.value("error").toString().toHtmlEscaped());
-            mRouterAge.restart();
-            return;
-        }
-
-        // Kvalitet efter RSRP (LTE/5G) om den finns, annars RSSI.
-        QString quality, col, value;
-        if (!o.value("rsrp").isNull()) {
-            double rsrp = o.value("rsrp").toDouble();
-            value = QString("RSRP %1 dBm").arg(rsrp, 0, 'f', 0);
-            if (rsrp >= -80) { quality = "utmärkt"; col = "#080"; }
-            else if (rsrp >= -90) { quality = "bra"; col = "#080"; }
-            else if (rsrp >= -100) { quality = "ok"; col = "#c70"; }
-            else { quality = "svag"; col = "#c00"; }
-        } else {
-            double rssi = o.value("rssi").toDouble();
-            value = QString("RSSI %1 dBm").arg(rssi, 0, 'f', 0);
-            if (rssi >= -65) { quality = "utmärkt"; col = "#080"; }
-            else if (rssi >= -75) { quality = "bra"; col = "#080"; }
-            else if (rssi >= -85) { quality = "ok"; col = "#c70"; }
-            else { quality = "svag"; col = "#c00"; }
-        }
-
-        QString type = o.value("conntype").toString();
-        QString op = o.value("operator").toString();
-        QString sinr = o.value("sinr").isNull() ? QString()
-                : QString(", SINR %1 dB").arg(o.value("sinr").toDouble(), 0, 'f', 0);
-
-        mRouterLine = QString("<b>4G/5G:</b> %1%2<br>&nbsp;&nbsp;<span style='color:%3'><b>%4</b></span> (%5%6)")
-                .arg(type.isEmpty() ? QString("?") : type.toHtmlEscaped(),
-                     op.isEmpty() ? QString() : " " + op.toHtmlEscaped(),
-                     col, quality, value, sinr);
-        mRouterAge.restart();
-    });
-}
-
-bool MainWindow::gamepadAttached()
-{
-#if defined(HAS_JOYSTICK_CHECK) && (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
-    return mController != nullptr && SDL_WasInit(SDL_INIT_GAMECONTROLLER) != 0 &&
-           SDL_GameControllerGetAttached(mController) == SDL_TRUE;
-#else
-    return true;
-#endif
-}
-
-void MainWindow::rcResendTick()
-{
-    // Hydraulik: firmware stoppar armarna efter 2 s utan kommando, så skicka om
-    // medan en armknapp hålls. Tappas dosan: stopp.
-    if (mArmFrontMove != 0 || mArmRearMove != 0) {
-        if (!gamepadAttached()) {
-            mArmL1 = mArmL2 = mArmR1 = mArmR2 = false;
-            updateArms();
-        } else if (!mArmResendAge.isValid() || mArmResendAge.elapsed() >= 500) {
-            sendArmHydraulics(true);
-        }
-    }
-
-    if (mLastActionValues.isEmpty()) {
-        return;
-    }
-
-    if (!gamepadAttached()) {
-        // Dosan borta mitt i körning: nolla allt direkt i stället för att vänta
-        // på hot-plug-kontrollen (5 s).
-        qWarning() << "Gamepad lost while active, sending 0 to all actions";
-        for (auto it = mLastActionValues.constBegin(); it != mLastActionValues.constEnd(); ++it) {
-            controllerAction(mActiveCarId, it.key(), 0.0f);
-        }
-        mLastActionValues.clear();
-        mCachedControllerValues.clear();
-        return;
-    }
-
-    for (auto it = mLastActionValues.constBegin(); it != mLastActionValues.constEnd(); ++it) {
-        controllerAction(mActiveCarId, it.key(), it.value());
-    }
-}
-
-// Armknapparna: L1 upp / L2 ned = främre armar, R1 upp / R2 ned = bakre armar.
-// Båda nedtryckta på samma sida = stopp.
-void MainWindow::updateArms()
-{
-    // Nyare vägen (dosabindningar, t.ex. VESC-armar): kontroll 1 = vänster sida,
-    // kontroll 3 = höger sida; +1 upp, -1 ned, 0 släppt.
-    float left = (mArmL1 == mArmL2) ? 0.0f : (mArmL1 ? 1.0f : -1.0f);
-    float right = (mArmR1 == mArmR2) ? 0.0f : (mArmR1 ? 1.0f : -1.0f);
-    handleControllerInput(1, left);
-    handleControllerInput(3, right);
-
-    // Hydraulik via firmware (CMD_HYDRAULIC_MOVE). Firmwarens värden skickas direkt:
-    // fram = 1, bak = 0; stopp = 0, upp = 1, ned = 2. (RControlStations egen
-    // HYDRAULIC_POS har fram = 0, bak = 1 — omvänt mot firmware, använd inte den.)
-    mArmFrontMove = (mArmL1 == mArmL2) ? 0 : (mArmL1 ? 1 : 2);
-    mArmRearMove = (mArmR1 == mArmR2) ? 0 : (mArmR1 ? 1 : 2);
-    sendArmHydraulics(false);
-}
-
-void MainWindow::sendArmHydraulics(bool force)
-{
-    static int lastFront = -1, lastRear = -1;
-    if (!mJoystickControlEnabled || !mTcpClientMulti->isAnyConnected()) {
-        return;
-    }
-    const quint8 FW_POS_FRONT = 1, FW_POS_REAR = 0;
-    if (force || mArmFrontMove != lastFront) {
-        mPacketInterface->hydraulicMove(mActiveCarId, (HYDRAULIC_POS)FW_POS_FRONT, (HYDRAULIC_MOVE)mArmFrontMove);
-        lastFront = mArmFrontMove;
-    }
-    if (force || mArmRearMove != lastRear) {
-        mPacketInterface->hydraulicMove(mActiveCarId, (HYDRAULIC_POS)FW_POS_REAR, (HYDRAULIC_MOVE)mArmRearMove);
-        lastRear = mArmRearMove;
-    }
-    mArmResendAge.restart();
-}
-
 void MainWindow::sendHeartbeat()
 {
     for(QList<CarInterface*>::Iterator it_car = mCars.begin();it_car < mCars.end();it_car++)
@@ -2565,10 +2333,6 @@ void MainWindow::packetDataToSend(QByteArray &data)
 
 void MainWindow::stateReceived(quint8 id, CAR_STATE state)
 {
-    mStateAge.restart();
-    if (mVehicle) {
-        mVehicle->stateReceived(id, state);
-    }
 
     if (!mSupportedFirmwares.contains(qMakePair(static_cast<int>(state.fw_major), static_cast<int>(state.fw_minor)))) {
         on_disconnectButton_clicked();
@@ -2579,7 +2343,7 @@ void MainWindow::stateReceived(quint8 id, CAR_STATE state)
     } else {
         for(QList<CarInterface*>::Iterator it_car = mCars.begin();it_car < mCars.end();it_car++) {
             CarInterface *car = *it_car;
-            if (car->getId() == id || car->getId() == 0) {
+            if (car->getId() == id) {
                 car->setStateData(state);
             }
         }
@@ -2617,6 +2381,7 @@ void MainWindow::rtcmReceived(QByteArray data)
             if (res == 1005 || res == 1006) {
                 ui->mapLiveWidget->setEnuRef(mRtcmState.pos.lat, mRtcmState.pos.lon, mRtcmState.pos.height);
                 ui->mapWidgetAnalysisResult->setEnuRef(mRtcmState.pos.lat, mRtcmState.pos.lon, mRtcmState.pos.height);
+                ui->mapWidgetFileAdmin->setEnuRef(mRtcmState.pos.lat, mRtcmState.pos.lon, mRtcmState.pos.height);
             }
         }
     }
@@ -2646,65 +2411,14 @@ void MainWindow::pingError(QString msg, QString error)
 
 void MainWindow::enuRx(quint8 id, double lat, double lon, double height)
 {
-    double cur[3];
-    ui->mapLiveWidget->getEnuRef(cur);
-    if (cur[0] != lat || cur[1] != lon || cur[2] != height) {
-        qDebug().noquote() << QString("ENU-ref från bil %1: %2, %3, %4 (kartan hade %5, %6, %7)")
-                              .arg(id).arg(lat, 0, 'f', 8).arg(lon, 0, 'f', 8).arg(height, 0, 'f', 2)
-                              .arg(cur[0], 0, 'f', 8).arg(cur[1], 0, 'f', 8).arg(cur[2], 0, 'f', 2);
-    }
+    (void)id;
     ui->mapLiveWidget->setEnuRef(lat, lon, height);
     ui->mapWidgetAnalysisResult->setEnuRef(lat, lon, height);
-}
-
-void MainWindow::applyAutoEnuRef(double lat, double lon, double height)
-{
-    int car = ui->mapCarBox->value();
-    double llh[3] = {lat, lon, height};
-    qDebug().noquote() << QString("Nollpunkt satt där roboten står: %1, %2, %3 (bil %4)")
-                          .arg(lat, 0, 'f', 8).arg(lon, 0, 'f', 8).arg(height, 0, 'f', 2).arg(car);
-
-    // Samma som ett gårdsval, men med robotens egen position.
-    ui->mapLiveWidget->setEnuRef(lat, lon, height);
-    ui->mapWidgetFields->setEnuRef(lat, lon, height);
-    ui->mapWidgetAnalysis->setEnuRef(lat, lon, height);
-    ui->mapWidgetAnalysisResult->setEnuRef(lat, lon, height);
-    mPacketInterface->setEnuRef(car, llh);
-    mPacketInterface->getEnuRef(car); // svaret (enuRx) bekräftar att kartan och bilen är i takt
-
-    // Roboten står i nollpunkten: centrera, ca 50 m i bild, och följ bilen.
-    double w = qMax(1, ui->mapLiveWidget->width());
-    ui->mapLiveWidget->setScaleFactor(w / (50.0 * 1000.0));
-    ui->mapLiveWidget->moveView(0.0, 0.0);
-    ui->mapStreamNmeaFollowBox->setChecked(false);
-    ui->mapFollowBox->setChecked(true);
-    ui->mapLiveWidget->setFollowCar(car);
-
-    saveMapPosition(lat, lon);
-}
-
-void MainWindow::saveMapPosition(double lat, double lon)
-{
-    QSettings s("RControlStation", "karta");
-    s.setValue("senasteLat", lat);
-    s.setValue("senasteLon", lon);
+    ui->mapWidgetFileAdmin->setEnuRef(lat, lon, height);
 }
 
 void MainWindow::nmeaGgaRx(int fields, NmeaServer::nmea_gga_info_t gga)
 {
-    if (fields >= 5) {
-        mLastGga = gga;
-        mHaveGga = true;
-        mGgaAge.restart();
-    }
-
-    // Första GPS-positionen efter anslutning (även SPP): nollpunkt där roboten står.
-    if (mAutoEnuRefPending && fields >= 5 &&
-            (gga.fix_type == 1 || gga.fix_type == 2 || gga.fix_type == 4 || gga.fix_type == 5)) {
-        mAutoEnuRefPending = false;
-        applyAutoEnuRef(gga.lat, gga.lon, gga.height);
-    }
-
     if (fields >= 5) {
         if (gga.fix_type == 4 || gga.fix_type == 5 || gga.fix_type == 2 ||
                 (gga.fix_type == 1 && !ui->mapStreamNmeaRtkOnlyBox->isChecked())) {
@@ -2715,6 +2429,7 @@ void MainWindow::nmeaGgaRx(int fields, NmeaServer::nmea_gga_info_t gga)
                 i_llh[1] = gga.lon;
                 i_llh[2] = gga.height;
                 ui->mapLiveWidget->setEnuRef(i_llh[0], i_llh[1], i_llh[2]);
+                ui->mapWidgetFileAdmin->setEnuRef(i_llh[0], i_llh[1], i_llh[2]);
                 ui->mapStreamNmeaZeroEnuBox->setChecked(false);
             } else {
                 ui->mapLiveWidget->getEnuRef(i_llh);
@@ -2755,10 +2470,10 @@ void MainWindow::nmeaGgaRx(int fields, NmeaServer::nmea_gga_info_t gga)
                       .arg(gga.height,0,'f',2)
                       .arg(gga.diff_age,0,'f',2);*/
             QByteArray fixBytes = fix_t.toLocal8Bit();
-            info = (QString("Fix type: %1\n") +
-                    QString("Sats    : %2\n") +
-                    QString("Height  : %3\n") +
-                    QString("Age     : %4"))
+            info = QString("Fix type: %1\n") +
+                           QString("Sats    : %2\n") +
+                           QString("Height  : %3\n") +
+                           QString("Age     : %4")
                        .arg(QString::fromLocal8Bit(fixBytes))
                        .arg(QString::number(gga.n_sat))
                        .arg(gga.height, 0, 'f', 2)
@@ -2777,9 +2492,7 @@ void MainWindow::nmeaGgaRx(int fields, NmeaServer::nmea_gga_info_t gga)
                          gga.diff_age);
 #endif
             p.setInfo(info);
-            if (mNmeaDrawTrace) {
-                ui->mapLiveWidget->addInfoPoint(p);
-            }
+            ui->mapLiveWidget->addInfoPoint(p);
 
             if (ui->mapStreamNmeaFollowBox->isChecked()) {
                 ui->mapLiveWidget->moveView(p.getX(), p.getY());
@@ -2869,11 +2582,10 @@ void MainWindow::infoTraceChanged(int traceNow)
 void MainWindow::controllerAction(int car, int iAction,float value=0)
 {
     if (mJoystickControlEnabled) {
-        // qDebug() << "Sending";
+        qDebug() << "Sending";
         mPacketInterface->setRcControlAdvanced(car, iAction, value);
     };
-/*
- *     switch (iAction)
+    switch (iAction)
     {
     case FRONT_UP:
         qDebug() << "Hydraulic, front up: " << value;
@@ -2892,7 +2604,6 @@ void MainWindow::controllerAction(int car, int iAction,float value=0)
         mPacketInterface->hydraulicMove(car, HYDRAULIC_POS_REAR, HYDRAULIC_MOVE_DOWN);
         break;
     }
-*/
 }
 
 
@@ -2908,7 +2619,7 @@ void MainWindow::jsButtonChanged(int button, bool pressed)
 
             // 3: Extra in
 
-            if (button == FRONT_UP || button == FRONT_DOWN || button == 1 ||
+            if (button == FRONT_UP || button == FRONT_DOWN || bRONT_DOWNutton == 1 ||
                     button == REAR_DOWN || button == REAR_UP || button == 6) {
                 // Use the cached active car ID
 
@@ -3011,7 +2722,23 @@ MainWindow::
 
 void MainWindow::on_connectSelectedButton_clicked()
 {
-    on_tcpConnectButton_clicked();
+    // Use the same logic as tcpConnectButton: read from tcpConnEdit
+    mTcpClientMulti->disconnectAll();
+
+    QStringList conns = ui->tcpConnEdit->toPlainText().split("\n");
+
+    for (QString c: conns) {
+        QStringList ipPort = c.split(":");
+
+        if (ipPort.size() == 1) {
+            mTcpClientMulti->addConnection(ipPort.at(0),
+                                           8300);
+        } else if (ipPort.size() == 2) {
+            mTcpClientMulti->addConnection(ipPort.at(0),
+                                           ipPort.at(1).toInt());
+        }
+        addCar(mCars.size(), ipPort.at(0));
+    }
 }
 
 void MainWindow::on_disconnectSelectedButton_clicked()
@@ -3032,7 +2759,7 @@ void MainWindow::fetchMachinesData(int retryCount)
     const int MAX_RETRIES = 3;
     const int RETRY_DELAY_MS = 2000; // 2 seconds between retries
     
-    QUrl url("http://192.168.200.1:8080/machines");
+    QUrl url(getServerBaseUrl() + "/machines");
     QNetworkRequest request(url);
     
     // Set a timeout for the request (10 seconds to be safe)
@@ -3196,7 +2923,7 @@ void MainWindow::fetchAllMachinesData(int retryCount)
     const int MAX_RETRIES = 3;
     const int RETRY_DELAY_MS = 2000; // 2 seconds between retries
     
-    QUrl url("http://192.168.200.1:8080/all_machines");
+    QUrl url(getServerBaseUrl() + "/all_machines");
     QNetworkRequest request(url);
     
     // Set a timeout for the request (10 seconds to be safe)
@@ -3273,10 +3000,11 @@ void MainWindow::fetchAllMachinesData(int retryCount)
 void MainWindow::fetchAllFarmsData(int retryCount)
 {
     qDebug() << "fetchAllFarmsData: Starting, retryCount:" << retryCount;
+    qDebug() << "DEBUG: fetchAllFarmsData - checking farmsModel:" << farmsModel;
     const int MAX_RETRIES = 3;
     const int RETRY_DELAY_MS = 2000; // 2 seconds between retries
     
-    QUrl url("http://192.168.200.1:8080/all_farms");
+    QUrl url(getServerBaseUrl() + "/all_farms");
     QNetworkRequest request(url);
     
     // Set a timeout for the request (10 seconds to be safe)
@@ -3299,13 +3027,16 @@ void MainWindow::fetchAllFarmsData(int retryCount)
     farmsModel->appendRow(new QStandardItem(""));
     
     // Connect the finished signal to parse the response
+    qDebug() << "DEBUG: fetchAllFarmsData - checking mNetworkManager:" << mNetworkManager;
     QNetworkReply* reply = mNetworkManager->get(request);
+    qDebug() << "DEBUG: fetchAllFarmsData - network request sent, reply:" << reply;
     if (!reply) {
         qDebug() << "ERROR: reply is null in fetchAllFarmsData!";
         return;
     }
     
     connect(reply, &QNetworkReply::finished, this, [this, reply, retryCount]() {
+        qDebug() << "DEBUG: fetchAllFarmsData - network reply finished";
         // Clear loading message
         farmsModel->removeRows(0, farmsModel->rowCount());
         
@@ -3373,6 +3104,7 @@ void MainWindow::fetchAllFarmsData(int retryCount)
 void MainWindow::fetchAllFarmsForLog()
 {
     qDebug() << "fetchAllFarmsForLog: Starting";
+    qDebug() << "DEBUG: fetchAllFarmsForLog - checking logFarmsModel:" << logFarmsModel;
     
     if (!logFarmsModel) {
         qDebug() << "ERROR: logFarmsModel is null!";
@@ -3385,11 +3117,13 @@ void MainWindow::fetchAllFarmsForLog()
     // Add loading indicator
     logFarmsModel->appendRow(new QStandardItem("Loading farms..."));
     
-    QUrl url("http://192.168.200.1:8080/all_farms");
+    QUrl url(getServerBaseUrl() + "/all_farms");
     QNetworkRequest request(url);
     request.setTransferTimeout(10000);
     
+    qDebug() << "DEBUG: fetchAllFarmsForLog - checking mNetworkManager:" << mNetworkManager;
     QNetworkReply* reply = mNetworkManager->get(request);
+    qDebug() << "DEBUG: fetchAllFarmsForLog - network request sent, reply:" << reply;
     if (!reply) {
         qDebug() << "ERROR: reply is null in fetchAllFarmsForLog!";
         logFarmsModel->removeRows(0, logFarmsModel->rowCount());
@@ -3494,7 +3228,7 @@ void MainWindow::fetchFieldsForLogFarm(int farmId)
     // Add loading indicator
     logFieldsModel->appendRow(new QStandardItem("Loading fields..."));
     
-    QUrl url("http://192.168.200.1:8080/all_fields");
+    QUrl url(getServerBaseUrl() + "/all_fields");
     QUrlQuery query;
     query.addQueryItem("farm", QString::number(farmId));
     url.setQuery(query);
@@ -3606,7 +3340,7 @@ void MainWindow::fetchPathsForLogField(int fieldId)
     // Add loading indicator
     logPathsModel->appendRow(new QStandardItem("Loading paths..."));
     
-    QUrl url("http://192.168.200.1:8080/all_paths");
+    QUrl url(getServerBaseUrl() + "/all_paths");
     QUrlQuery query;
     query.addQueryItem("field", QString::number(fieldId));
     url.setQuery(query);
@@ -3707,7 +3441,7 @@ void MainWindow::loadPathAsLog(int pathId)
 {
     qDebug() << "loadPathAsLog: Starting for pathId:" << pathId;
     
-    QUrl url("http://192.168.200.1:8080/log");
+    QUrl url(getServerBaseUrl() + "/log");
     QUrlQuery query;
     query.addQueryItem("path", QString::number(pathId));
     url.setQuery(query);
@@ -3819,6 +3553,87 @@ void MainWindow::onPathSelectedForLog(int index)
     }
 }
 
+// File admin tab slot functions
+void MainWindow::onFarmSelectedForAdmin(int index)
+{
+    qDebug() << "onFarmSelectedForAdmin: Farm index selected:" << index;
+    
+    if (index < 0 || !adminFarmsModel || index >= adminFarmsModel->rowCount()) {
+        qDebug() << "Invalid farm index or model not ready";
+        if (adminFieldsModel) {
+            adminFieldsModel->removeRows(0, adminFieldsModel->rowCount());
+        }
+        if (adminPathsModel) {
+            adminPathsModel->removeRows(0, adminPathsModel->rowCount());
+        }
+        return;
+    }
+    
+    QStandardItem* farmItem = adminFarmsModel->item(index);
+    if (farmItem) {
+        QString farmId = farmItem->data(Qt::UserRole).toString();
+        qDebug() << "Selected farm ID:" << farmId;
+        
+        if (!farmId.isEmpty()) {
+            // Fetch farm location and set map origin
+            fetchFarmLocationForAdmin(farmId.toInt());
+            
+            // Fetch fields for the selected farm
+            fetchFieldsForAdminFarm(farmId.toInt());
+        } else {
+            qDebug() << "No farm ID found for selected farm";
+        }
+    }
+}
+
+void MainWindow::onFieldSelectedForAdmin(int index)
+{
+    qDebug() << "onFieldSelectedForAdmin: Field index selected:" << index;
+    
+    if (index < 0 || !adminFieldsModel || index >= adminFieldsModel->rowCount()) {
+        qDebug() << "Invalid field index or model not ready";
+        if (adminPathsModel) {
+            adminPathsModel->removeRows(0, adminPathsModel->rowCount());
+        }
+        return;
+    }
+    
+    QStandardItem* fieldItem = adminFieldsModel->item(index);
+    if (fieldItem) {
+        QString fieldId = fieldItem->data(Qt::UserRole).toString();
+        qDebug() << "Selected field ID:" << fieldId;
+        
+        if (!fieldId.isEmpty()) {
+            fetchPathsForAdminField(fieldId.toInt());
+        } else {
+            qDebug() << "No field ID found for selected field";
+        }
+    }
+}
+
+void MainWindow::onPathSelectedForAdmin(int index)
+{
+    qDebug() << "onPathSelectedForAdmin: Path index selected:" << index;
+    
+    if (index < 0 || !adminPathsModel || index >= adminPathsModel->rowCount()) {
+        qDebug() << "Invalid path index or model not ready";
+        return;
+    }
+    
+    QStandardItem* pathItem = adminPathsModel->item(index);
+    if (pathItem) {
+        QString pathId = pathItem->data(Qt::UserRole).toString();
+        qDebug() << "Selected path ID:" << pathId;
+        
+        // Load the selected path/field into the map
+        if (!pathId.isEmpty()) {
+            loadAdminPath(pathId.toInt());
+        } else {
+            qDebug() << "No path ID found for selected path";
+        }
+    }
+}
+
 void MainWindow::onLoadLogButtonClicked()
 {
     qDebug() << "onLoadLogButtonClicked: Load log button clicked";
@@ -3857,7 +3672,7 @@ void MainWindow::fetchLogsForPath(int pathId)
     // Add loading indicator
     logLogsModel->appendRow(new QStandardItem("Loading logs..."));
     
-    QUrl url("http://192.168.200.1:8080/all_logs");
+    QUrl url(getServerBaseUrl() + "/all_logs");
     QUrlQuery query;
     query.addQueryItem("path", QString::number(pathId));
     url.setQuery(query);
@@ -3895,6 +3710,593 @@ void MainWindow::fetchLogsForPath(int pathId)
         }
         reply->deleteLater();
     });
+}
+
+// File admin tab fetch functions
+void MainWindow::fetchFarmLocationForAdmin(int farmId)
+{
+    qDebug() << "fetchFarmLocationForAdmin: Starting for farmId:" << farmId;
+    
+    // Create URL for /read_farm endpoint
+    QUrl url(QString("%1/read_farm").arg(getServerBaseUrl()));
+    QUrlQuery query;
+    query.addQueryItem("id", QString::number(farmId));
+    url.setQuery(query);
+    
+    qDebug() << "Fetching farm location from URL:" << url.toString();
+    
+    QNetworkRequest request(url);
+    request.setTransferTimeout(10000);
+    
+    QNetworkReply* reply = mNetworkManager->get(request);
+    if (!reply) {
+        qDebug() << "ERROR: Network request failed for" << url.toString();
+        return;
+    }
+    
+    connect(reply, &QNetworkReply::finished, this, [this, reply, farmId]() {
+        int statusCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        qDebug() << "fetchFarmLocationForAdmin HTTP Status Code:" << statusCode;
+        
+        if (reply->error() == QNetworkReply::NoError && statusCode == 200) {
+            QByteArray xmlData = reply->readAll();
+            qDebug() << "Received farm location data (size:" << xmlData.size() << ")";
+            qDebug() << "Raw XML:" << xmlData;
+            
+            // Parse the XML to extract latitude and longitude
+            QXmlStreamReader xmlReader(xmlData);
+            double latitude = 0.0;
+            double longitude = 0.0;
+            bool found = false;
+            
+            while (!xmlReader.atEnd()) {
+                QXmlStreamReader::TokenType token = xmlReader.readNext();
+                
+                if (token == QXmlStreamReader::StartElement) {
+                    if (xmlReader.name() == QLatin1String("latitude")) {
+                        token = xmlReader.readNext();
+                        if (token == QXmlStreamReader::Characters) {
+                            latitude = xmlReader.text().toString().toDouble();
+                            qDebug() << "Found latitude:" << latitude;
+                        }
+                    } else if (xmlReader.name() == QLatin1String("longitude")) {
+                        token = xmlReader.readNext();
+                        if (token == QXmlStreamReader::Characters) {
+                            longitude = xmlReader.text().toString().toDouble();
+                            qDebug() << "Found longitude:" << longitude;
+                        }
+                    }
+                }
+            }
+            
+            if (xmlReader.hasError()) {
+                qDebug() << "XML parsing error:" << xmlReader.errorString();
+            }
+            
+            // Set the map origin if we found valid coordinates
+            if (latitude != 0.0 || longitude != 0.0) {
+                qDebug() << "Setting map origin to lat:" << latitude << "lon:" << longitude;
+                double llh[3];
+                llh[0] = latitude;
+                llh[1] = longitude;
+                llh[2] = 0;
+                
+                ui->mapWidgetFileAdmin->setEnuRef(llh[0], llh[1], 0);
+                
+                // Also update other map widgets for consistency
+                ui->mapLiveWidget->setEnuRef(llh[0], llh[1], 0);
+                ui->mapWidgetFields->setEnuRef(llh[0], llh[1], 0);
+                ui->mapWidgetAnalysis->setEnuRef(llh[0], llh[1], 0);
+                ui->mapWidgetAnalysisResult->setEnuRef(llh[0], llh[1], 0);
+                
+                // Set the reference for the packet interface
+                mPacketInterface->setEnuRef(ui->mapCarBox->value(), llh);
+            } else {
+                qDebug() << "No valid coordinates found in farm location data";
+            }
+        } else {
+            QString errorMsg = reply->errorString();
+            if (statusCode != 200 && statusCode > 0) {
+                errorMsg = QString("HTTP %1").arg(statusCode);
+            }
+            qDebug() << "Error fetching farm location:" << errorMsg;
+        }
+        reply->deleteLater();
+    });
+}
+
+void MainWindow::fetchFieldsForAdminFarm(int farmId)
+{
+    qDebug() << "fetchFieldsForAdminFarm: Starting for farmId:" << farmId;
+    
+    if (!adminFieldsModel) {
+        qDebug() << "ERROR: adminFieldsModel is null!";
+        return;
+    }
+    
+    // Disconnect signals to prevent reentrancy issues
+    disconnect(ui->comboBoxAdminField, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::onFieldSelectedForAdmin);
+    disconnect(ui->comboBoxAdminPath, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::onPathSelectedForAdmin);
+    
+    // Clear existing data
+    adminFieldsModel->removeRows(0, adminFieldsModel->rowCount());
+    adminPathsModel->removeRows(0, adminPathsModel->rowCount()); // Also clear paths
+    
+    // Add loading indicator
+    adminFieldsModel->appendRow(new QStandardItem("Loading fields..."));
+    
+    // Reconnect signals
+    connect(ui->comboBoxAdminField, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::onFieldSelectedForAdmin);
+    connect(ui->comboBoxAdminPath, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::onPathSelectedForAdmin);
+    
+    QUrl url(getServerBaseUrl() + "/all_fields");
+    QUrlQuery query;
+    query.addQueryItem("farm", QString::number(farmId));
+    url.setQuery(query);
+    
+    QNetworkRequest request(url);
+    request.setTransferTimeout(10000);
+    
+    QNetworkReply* reply = mNetworkManager->get(request);
+    if (!reply) {
+        qDebug() << "ERROR: reply is null in fetchFieldsForAdminFarm!";
+        adminFieldsModel->removeRows(0, adminFieldsModel->rowCount());
+        adminFieldsModel->appendRow(new QStandardItem("Error: Network request failed"));
+        return;
+    }
+    
+    connect(reply, &QNetworkReply::finished, this, [this, reply, farmId]() {
+        int statusCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        qDebug() << "fetchFieldsForAdminFarm HTTP Status Code:" << statusCode;
+        
+        if (reply->error() == QNetworkReply::NoError && statusCode == 200) {
+            QByteArray xmlData = reply->readAll();
+            qDebug() << "Received fields data for farm" << farmId << "(size:" << xmlData.size() << ")";
+            
+            if (!xmlData.isEmpty()) {
+                QMetaObject::invokeMethod(this, [this, xmlData]() {
+                    adminFieldsModel->removeRows(0, adminFieldsModel->rowCount());
+                    parseAllFieldsXmlForAdmin(xmlData);
+                });
+            } else {
+                qDebug() << "Empty response for fields";
+                QMetaObject::invokeMethod(this, [this]() {
+                    adminFieldsModel->removeRows(0, adminFieldsModel->rowCount());
+                    adminFieldsModel->appendRow(new QStandardItem("No fields data"));
+                });
+            }
+        } else {
+            qDebug() << "Error fetching fields for farm:" << farmId << "- Error:" << reply->errorString();
+            QMetaObject::invokeMethod(this, [this]() {
+                adminFieldsModel->removeRows(0, adminFieldsModel->rowCount());
+                adminFieldsModel->appendRow(new QStandardItem("Error loading fields"));
+            });
+        }
+        reply->deleteLater();
+    });
+    
+    qDebug() << "Fetching fields for farm:" << farmId << "from:" << url.toString();
+}
+
+void MainWindow::fetchPathsForAdminField(int fieldId)
+{
+    qDebug() << "fetchPathsForAdminField: Starting for fieldId:" << fieldId;
+    
+    if (!adminPathsModel) {
+        qDebug() << "ERROR: adminPathsModel is null!";
+        return;
+    }
+    
+    // Disconnect signals to prevent reentrancy issues
+    disconnect(ui->comboBoxAdminPath, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::onPathSelectedForAdmin);
+    
+    // Clear existing data
+    adminPathsModel->removeRows(0, adminPathsModel->rowCount());
+    
+    // Add loading indicator
+    adminPathsModel->appendRow(new QStandardItem("Loading paths..."));
+    
+    // Reconnect signals
+    connect(ui->comboBoxAdminPath, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::onPathSelectedForAdmin);
+    
+    QUrl url(getServerBaseUrl() + "/all_paths");
+    QUrlQuery query;
+    query.addQueryItem("field", QString::number(fieldId));
+    url.setQuery(query);
+    
+    QNetworkRequest request(url);
+    request.setTransferTimeout(10000);
+    
+    QNetworkReply* reply = mNetworkManager->get(request);
+    if (!reply) {
+        qDebug() << "ERROR: reply is null in fetchPathsForAdminField!";
+        adminPathsModel->removeRows(0, adminPathsModel->rowCount());
+        adminPathsModel->appendRow(new QStandardItem("Error: Network request failed"));
+        return;
+    }
+    
+    connect(reply, &QNetworkReply::finished, this, [this, reply, fieldId]() {
+        int statusCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        qDebug() << "fetchPathsForAdminField HTTP Status Code:" << statusCode;
+        
+        if (reply->error() == QNetworkReply::NoError && statusCode == 200) {
+            QByteArray xmlData = reply->readAll();
+            qDebug() << "Received paths data for field" << fieldId << "(size:" << xmlData.size() << ")";
+            
+            if (!xmlData.isEmpty()) {
+                QMetaObject::invokeMethod(this, [this, xmlData]() {
+                    adminPathsModel->removeRows(0, adminPathsModel->rowCount());
+                    parseAllPathsXmlForAdmin(xmlData);
+                });
+            } else {
+                qDebug() << "Empty response for paths";
+                QMetaObject::invokeMethod(this, [this]() {
+                    adminPathsModel->removeRows(0, adminPathsModel->rowCount());
+                    adminPathsModel->appendRow(new QStandardItem("No paths data"));
+                });
+            }
+        } else {
+            qDebug() << "Error fetching paths for field:" << fieldId << "- Error:" << reply->errorString();
+            QMetaObject::invokeMethod(this, [this]() {
+                adminPathsModel->removeRows(0, adminPathsModel->rowCount());
+                adminPathsModel->appendRow(new QStandardItem("Error loading paths"));
+            });
+        }
+        reply->deleteLater();
+    });
+    
+    qDebug() << "Fetching paths for field:" << fieldId << "from:" << url.toString();
+}
+
+void MainWindow::loadAdminPath(int pathId)
+{
+    qDebug() << "loadAdminPath: Loading path ID:" << pathId;
+    
+    // Clear the map first
+    mMapWidgetFileAdmin->clearAllFields();
+    mMapWidgetFileAdmin->clearAllPaths();
+    mMapWidgetFileAdmin->update();
+    
+    // Load the file from the server via HTTP
+    QUrl url(QString("%1/field/%2").arg(getServerBaseUrl()).arg(pathId));
+    qDebug() << "Fetching field from URL:" << url.toString();
+    
+    QNetworkRequest request(url);
+    request.setTransferTimeout(10000);
+    
+    QNetworkReply* reply = mNetworkManager->get(request);
+    if (!reply) {
+        qDebug() << "ERROR: Network request failed for" << url.toString();
+        showStatusInfo("Network error: " + QString::number(pathId), false);
+        return;
+    }
+    
+    // Show loading state
+    showStatusInfo("Loading border: " + QString::number(pathId), true);
+    
+    connect(reply, &QNetworkReply::finished, this, [this, reply, pathId]() {
+        int statusCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        qDebug() << "HTTP Status Code (field):" << statusCode;
+        
+        if (reply->error() == QNetworkReply::NoError && statusCode == 200) {
+            QByteArray xmlData = reply->readAll();
+            qDebug() << "Received XML data for field (size:" << xmlData.size() << ")";
+            
+            if (!xmlData.isEmpty()) {
+                QMetaObject::invokeMethod(this, [this, xmlData, pathId]() {
+                    QXmlStreamReader xmlReader(xmlData);
+                    bool success = mMapWidgetFileAdmin->loadXMLRoute(&xmlReader, true); // true = isBorder
+                    
+                    if (success) {
+                        qDebug() << "Successfully loaded border for path:" << pathId;
+                        showStatusInfo("Loaded border: " + QString::number(pathId), true);
+                        
+                        // Center the view on the loaded data
+                        if (mMapWidgetFileAdmin->getFieldNum() > 0) {
+                            std::array<double, 4> extremes = mMapWidgetFileAdmin->findExtremeValuesFieldBorders();
+                            double offsetx = (extremes[0] + extremes[1]) / 2.0;
+                            double offsety = (extremes[2] + extremes[3]) / 2.0;
+                            double scalex = 1.0 / (extremes[1] - extremes[0]);
+                            double scaley = 1.0 / (extremes[3] - extremes[2]);
+                            
+                            mMapWidgetFileAdmin->moveView(offsetx, offsety);
+                            mMapWidgetFileAdmin->setScaleFactor(std::min(scalex, scaley) * 0.9);
+                            mMapWidgetFileAdmin->update();
+                        }
+                    } else {
+                        qDebug() << "Failed to load border for path:" << pathId;
+                        showStatusInfo("Failed to load border: " + QString::number(pathId), false);
+                    }
+                });
+            }
+        } else {
+            qDebug() << "Network error:" << reply->error() << "-" << reply->errorString();
+            QMetaObject::invokeMethod(this, [this, pathId]() {
+                showStatusInfo("Network error: " + QString::number(pathId), false);
+            });
+        }
+        reply->deleteLater();
+    });
+}
+
+// Parse functions for admin tab
+void MainWindow::parseAllFieldsXmlForAdmin(const QByteArray &xmlData)
+{
+    qDebug() << "parseAllFieldsXmlForAdmin: Starting";
+    
+    if (!adminFieldsModel) {
+        qDebug() << "ERROR: adminFieldsModel is null!";
+        return;
+    }
+    
+    // Disconnect signals to prevent reentrancy issues
+    disconnect(ui->comboBoxAdminField, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::onFieldSelectedForAdmin);
+    disconnect(ui->comboBoxAdminPath, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::onPathSelectedForAdmin);
+    
+    // Clear existing data
+    adminFieldsModel->removeRows(0, adminFieldsModel->rowCount());
+    
+    // Parse the XML
+    QXmlStreamReader xmlReader(xmlData);
+    bool foundFields = false;
+    
+    while (!xmlReader.atEnd()) {
+        QXmlStreamReader::TokenType token = xmlReader.readNext();
+        
+        if (token == QXmlStreamReader::StartElement && xmlReader.name() == QLatin1String("field")) {
+            QString id, name;
+            
+            while (!xmlReader.atEnd()) {
+                token = xmlReader.readNext();
+                
+                if (token == QXmlStreamReader::EndElement && xmlReader.name() == QLatin1String("field")) {
+                    break;
+                }
+                
+                if (token == QXmlStreamReader::StartElement) {
+                    if (xmlReader.name() == QLatin1String("id")) {
+                        token = xmlReader.readNext();
+                        if (token == QXmlStreamReader::Characters) {
+                            id = xmlReader.text().toString();
+                        }
+                    } else if (xmlReader.name() == QLatin1String("name")) {
+                        token = xmlReader.readNext();
+                        if (token == QXmlStreamReader::Characters) {
+                            name = xmlReader.text().toString();
+                        }
+                    }
+                }
+            }
+            
+            if (!name.isEmpty()) {
+                QStandardItem* fieldItem = new QStandardItem(name);
+                if (!id.isEmpty()) {
+                    fieldItem->setData(id, Qt::UserRole); // Store ID as user data
+                }
+                adminFieldsModel->appendRow(fieldItem);
+                foundFields = true;
+                qDebug() << "Added field to admin tab:" << name << "(ID:" << id << ")";
+            }
+        }
+    }
+    
+    if (!foundFields) {
+        qDebug() << "No fields found in admin fields XML";
+        adminFieldsModel->appendRow(new QStandardItem("No fields found"));
+    }
+    
+    if (xmlReader.hasError()) {
+        qDebug() << "XML parsing error:" << xmlReader.errorString();
+        adminFieldsModel->appendRow(new QStandardItem("XML Error: " + xmlReader.errorString()));
+    }
+    
+    // Reconnect signals
+    connect(ui->comboBoxAdminField, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::onFieldSelectedForAdmin);
+    connect(ui->comboBoxAdminPath, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::onPathSelectedForAdmin);
+    
+    qDebug() << "parseAllFieldsXmlForAdmin: Fields loaded:" << adminFieldsModel->rowCount();
+}
+
+void MainWindow::parseAllPathsXmlForAdmin(const QByteArray &xmlData)
+{
+    qDebug() << "parseAllPathsXmlForAdmin: Starting";
+    
+    if (!adminPathsModel) {
+        qDebug() << "ERROR: adminPathsModel is null!";
+        return;
+    }
+    
+    // Disconnect signals to prevent reentrancy issues
+    disconnect(ui->comboBoxAdminPath, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::onPathSelectedForAdmin);
+    
+    // Clear existing data
+    adminPathsModel->removeRows(0, adminPathsModel->rowCount());
+    
+    // Parse the XML
+    QXmlStreamReader xmlReader(xmlData);
+    bool foundPaths = false;
+    
+    while (!xmlReader.atEnd()) {
+        QXmlStreamReader::TokenType token = xmlReader.readNext();
+        
+        if (token == QXmlStreamReader::StartElement && xmlReader.name() == QLatin1String("path")) {
+            QString id, name;
+            
+            while (!xmlReader.atEnd()) {
+                token = xmlReader.readNext();
+                
+                if (token == QXmlStreamReader::EndElement && xmlReader.name() == QLatin1String("path")) {
+                    break;
+                }
+                
+                if (token == QXmlStreamReader::StartElement) {
+                    if (xmlReader.name() == QLatin1String("id")) {
+                        token = xmlReader.readNext();
+                        if (token == QXmlStreamReader::Characters) {
+                            id = xmlReader.text().toString();
+                        }
+                    } else if (xmlReader.name() == QLatin1String("name")) {
+                        token = xmlReader.readNext();
+                        if (token == QXmlStreamReader::Characters) {
+                            name = xmlReader.text().toString();
+                        }
+                    }
+                }
+            }
+            
+            if (!name.isEmpty()) {
+                QStandardItem* pathItem = new QStandardItem(name);
+                if (!id.isEmpty()) {
+                    pathItem->setData(id, Qt::UserRole); // Store ID as user data
+                }
+                adminPathsModel->appendRow(pathItem);
+                foundPaths = true;
+                qDebug() << "Added path to admin tab:" << name << "(ID:" << id << ")";
+            }
+        }
+    }
+    
+    if (!foundPaths) {
+        qDebug() << "No paths found in admin paths XML";
+        adminPathsModel->appendRow(new QStandardItem("No paths found"));
+    }
+    
+    if (xmlReader.hasError()) {
+        qDebug() << "XML parsing error:" << xmlReader.errorString();
+        adminPathsModel->appendRow(new QStandardItem("XML Error: " + xmlReader.errorString()));
+    }
+    
+    // Reconnect signals
+    connect(ui->comboBoxAdminPath, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::onPathSelectedForAdmin);
+    
+    qDebug() << "parseAllPathsXmlForAdmin: Paths loaded:" << adminPathsModel->rowCount();
+}
+
+void MainWindow::fetchUnconnectedFields()
+{
+    qDebug() << "fetchUnconnectedFields: Starting";
+    
+    if (!adminFilesModel) {
+        qDebug() << "ERROR: adminFilesModel is null!";
+        return;
+    }
+    
+    if (!mNetworkManager) {
+        qDebug() << "ERROR: mNetworkManager is null!";
+        adminFilesModel->removeRows(0, adminFilesModel->rowCount());
+        adminFilesModel->appendRow(new QStandardItem("Error: Network manager not available"));
+        return;
+    }
+    
+    // Clear existing data
+    adminFilesModel->removeRows(0, adminFilesModel->rowCount());
+    
+    // Add loading indicator
+    adminFilesModel->appendRow(new QStandardItem("Loading unconnected fields..."));
+    
+    QUrl url(getServerBaseUrl() + "/unconnected_fields");
+    qDebug() << "Fetching unconnected fields from:" << url.toString();
+    
+    QNetworkRequest request(url);
+    request.setTransferTimeout(10000);
+    
+    QNetworkReply* reply = mNetworkManager->get(request);
+    if (!reply) {
+        qDebug() << "ERROR: reply is null in fetchUnconnectedFields!";
+        adminFilesModel->removeRows(0, adminFilesModel->rowCount());
+        adminFilesModel->appendRow(new QStandardItem("Error: Network request failed"));
+        return;
+    }
+    
+    connect(reply, &QNetworkReply::finished, this, [this, reply]() {
+        int statusCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        qDebug() << "fetchUnconnectedFields HTTP Status Code:" << statusCode;
+        qDebug() << "fetchUnconnectedFields reply error:" << reply->errorString();
+        
+        if (reply->error() == QNetworkReply::NoError && statusCode == 200) {
+            QByteArray xmlData = reply->readAll();
+            qDebug() << "Received unconnected fields data (size:" << xmlData.size() << ")";
+            qDebug() << "Raw data:" << xmlData;
+            
+            if (!xmlData.isEmpty()) {
+                QMetaObject::invokeMethod(this, [this, xmlData]() {
+                    parseUnconnectedFieldsXmlForAdmin(xmlData);
+                });
+            } else {
+                qDebug() << "Empty response for unconnected fields";
+                QMetaObject::invokeMethod(this, [this]() {
+                    adminFilesModel->removeRows(0, adminFilesModel->rowCount());
+                    adminFilesModel->appendRow(new QStandardItem("No unconnected fields data"));
+                });
+            }
+        } else {
+            qDebug() << "Error fetching unconnected fields - Error:" << reply->errorString();
+            QMetaObject::invokeMethod(this, [this, reply]() {
+                adminFilesModel->removeRows(0, adminFilesModel->rowCount());
+                adminFilesModel->appendRow(new QStandardItem("Error: " + reply->errorString()));
+            });
+        }
+        reply->deleteLater();
+    });
+}
+
+void MainWindow::parseUnconnectedFieldsXmlForAdmin(const QByteArray &xmlData)
+{
+    qDebug() << "parseUnconnectedFieldsXmlForAdmin: Starting";
+    qDebug() << "Raw XML data:" << xmlData;
+    
+    if (!adminFilesModel) {
+        qDebug() << "ERROR: adminFilesModel is null!";
+        return;
+    }
+    
+    // Clear existing data
+    adminFilesModel->removeRows(0, adminFilesModel->rowCount());
+    
+    // Parse the XML
+    QXmlStreamReader xmlReader(xmlData);
+    bool foundFiles = false;
+    
+    while (!xmlReader.atEnd()) {
+        QXmlStreamReader::TokenType token = xmlReader.readNext();
+        
+        // Look for <field> elements
+        if (token == QXmlStreamReader::StartElement && xmlReader.name() == QLatin1String("field")) {
+            // Read the content inside <field> which should be <filename>text</filename>
+            while (!xmlReader.atEnd()) {
+                token = xmlReader.readNext();
+                
+                if (token == QXmlStreamReader::EndElement && xmlReader.name() == QLatin1String("field")) {
+                    break;
+                }
+                
+                // Look for <filename> element inside <field>
+                if (token == QXmlStreamReader::StartElement && xmlReader.name() == QLatin1String("filename")) {
+                    token = xmlReader.readNext();
+                    if (token == QXmlStreamReader::Characters) {
+                        QString filename = xmlReader.text().toString();
+                        if (!filename.isEmpty()) {
+                            adminFilesModel->appendRow(new QStandardItem(filename));
+                            foundFiles = true;
+                            qDebug() << "Added unconnected field:" << filename;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    if (!foundFiles) {
+        qDebug() << "No unconnected fields found in XML";
+        adminFilesModel->appendRow(new QStandardItem("No unconnected fields found"));
+    }
+    
+    if (xmlReader.hasError()) {
+        qDebug() << "XML parsing error:" << xmlReader.errorString();
+        adminFilesModel->appendRow(new QStandardItem("XML Error: " + xmlReader.errorString()));
+    }
+    
+    qDebug() << "parseUnconnectedFieldsXmlForAdmin: Files loaded:" << adminFilesModel->rowCount();
 }
 
 void MainWindow::parseAllLogsXmlForLog(const QByteArray &xmlData)
@@ -3958,7 +4360,7 @@ void MainWindow::fetchLogForLog(int logId)
 {
     qDebug() << "fetchLogForLog: Starting for logId:" << logId;
     
-    QUrl url("http://192.168.200.1:8080/log");
+    QUrl url(getServerBaseUrl() + "/log");
     QUrlQuery query;
     query.addQueryItem("id", QString::number(logId));
     url.setQuery(query);
@@ -4050,7 +4452,7 @@ void MainWindow::fetchAllFieldsData(int farmId, int retryCount)
     const int MAX_RETRIES = 3;
     const int RETRY_DELAY_MS = 2000; // 2 seconds between retries
     
-    QUrl url("http://192.168.200.1:8080/all_fields");
+    QUrl url(getServerBaseUrl() + "/all_fields");
     QUrlQuery query;
     query.addQueryItem("farm", QString::number(farmId));
     url.setQuery(query);
@@ -4141,91 +4543,13 @@ void MainWindow::fetchAllFieldsData(int farmId, int retryCount)
     qDebug() << "Fetching all_fields data from:" << url.toString() << "(attempt" << (retryCount + 1) << ")";
 }
 
-void MainWindow::fetchUnconnectedFieldsData(int retryCount)
-{
-    qDebug() << "fetchUnconnectedFieldsData: Starting, retryCount:" << retryCount;
-    const int MAX_RETRIES = 3;
-    const int RETRY_DELAY_MS = 2000; // 2 seconds between retries
-
-    if (!mUnconnectedFieldsTable) {
-        qDebug() << "ERROR: mUnconnectedFieldsTable is null in fetchUnconnectedFieldsData!";
-        return;
-    }
-
-    // Clear the table
-    mUnconnectedFieldsTable->setRowCount(0);
-    
-    // Add loading indicator
-    mUnconnectedFieldsTable->insertRow(0);
-    mUnconnectedFieldsTable->setItem(0, 0, new QTableWidgetItem(retryCount > 0 ? QString("Retrying... (%1/%2)").arg(retryCount).arg(MAX_RETRIES) : "Loading..."));
-
-    QUrl url("http://192.168.200.1:8080/unconnected_fields");
-    QNetworkRequest request(url);
-    request.setTransferTimeout(10000);
-
-    QNetworkReply* reply = mNetworkManager->get(request);
-    if (!reply) {
-        qDebug() << "ERROR: reply is null in fetchUnconnectedFieldsData!";
-        mUnconnectedFieldsTable->setRowCount(0);
-        mUnconnectedFieldsTable->insertRow(0);
-        mUnconnectedFieldsTable->setItem(0, 0, new QTableWidgetItem("Error: Network request failed"));
-        return;
-    }
-
-    connect(reply, &QNetworkReply::finished, this, [this, reply, retryCount]() {
-        // Clear loading message
-        mUnconnectedFieldsTable->setRowCount(0);
-
-        int statusCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
-        qDebug() << "HTTP Status Code (unconnected_fields):" << statusCode;
-        
-        if (reply->error() != QNetworkReply::NoError) {
-            qDebug() << "Network error:" << reply->error() << "-" << reply->errorString();
-        }
-
-        if (reply->error() == QNetworkReply::NoError && statusCode == 200) {
-            QByteArray xmlData = reply->readAll();
-            qDebug() << "Received XML data from unconnected_fields (size:" << xmlData.size() << ")";
-            
-            if (!xmlData.isEmpty()) {
-                parseUnconnectedFieldsXml(xmlData);
-            } else {
-                qDebug() << "Empty response for unconnected_fields";
-                mUnconnectedFieldsTable->insertRow(0);
-                mUnconnectedFieldsTable->setItem(0, 0, new QTableWidgetItem("No unconnected fields data"));
-            }
-        } else {
-            QString errorMsg = reply->errorString();
-            if (statusCode != 200 && statusCode > 0) {
-                errorMsg = QString("HTTP %1").arg(statusCode);
-            }
-            qDebug() << "Error fetching unconnected_fields:" << errorMsg;
-            
-            // Retry logic
-            if (retryCount < MAX_RETRIES) {
-                QTimer::singleShot(RETRY_DELAY_MS, this, [this, retryCount]() {
-                    fetchUnconnectedFieldsData(retryCount + 1);
-                });
-            } else {
-                mUnconnectedFieldsTable->insertRow(0);
-                mUnconnectedFieldsTable->setItem(0, 0, new QTableWidgetItem("Error"));
-                mUnconnectedFieldsTable->insertRow(1);
-                mUnconnectedFieldsTable->setItem(1, 0, new QTableWidgetItem(errorMsg));
-            }
-        }
-        reply->deleteLater();
-    });
-
-    qDebug() << "Fetching unconnected_fields data from:" << url.toString() << "(attempt" << (retryCount + 1) << ")";
-}
-
 void MainWindow::fetchAllPathsData(int fieldId, int retryCount)
 {
     qDebug() << "fetchAllPathsData: Starting for fieldId:" << fieldId << "retryCount:" << retryCount;
     const int MAX_RETRIES = 3;
     const int RETRY_DELAY_MS = 2000; // 2 seconds between retries
     
-    QUrl url("http://192.168.200.1:8080/all_paths");
+    QUrl url(getServerBaseUrl() + "/all_paths");
     QUrlQuery query;
     query.addQueryItem("field", QString::number(fieldId));
     url.setQuery(query);
@@ -4321,7 +4645,7 @@ void MainWindow::fetchVehicleTypes(int retryCount)
     const int MAX_RETRIES = 3;
     const int RETRY_DELAY_MS = 2000; // 2 seconds between retries
     
-    QUrl url("http://192.168.200.1:8080/vehicle_types");
+    QUrl url(getServerBaseUrl() + "/vehicle_types");
     QNetworkRequest request(url);
     
     // Set a timeout for the request (10 seconds to be safe)
@@ -4788,73 +5112,6 @@ void MainWindow::parseAllFieldsXml(const QByteArray &xmlData)
     }
 }
 
-void MainWindow::parseUnconnectedFieldsXml(const QByteArray &xmlData)
-{
-    qDebug() << "parseUnconnectedFieldsXml: Starting";
-    
-    if (!mUnconnectedFieldsTable) {
-        qDebug() << "ERROR: mUnconnectedFieldsTable is null in parseUnconnectedFieldsXml!";
-        return;
-    }
-    
-    // Clear existing data
-    mUnconnectedFieldsTable->setRowCount(0);
-
-    // Parse the XML
-    QXmlStreamReader xmlReader(xmlData);
-    bool foundFiles = false;
-
-    while (!xmlReader.atEnd()) {
-        QXmlStreamReader::TokenType token = xmlReader.readNext();
-
-        if (token == QXmlStreamReader::StartElement && xmlReader.name() == QLatin1String("path")) {
-            QString filename;
-            foundFiles = true;
-            qDebug() << "Found path element in unconnected_fields";
-
-            // Read path element contents
-            while (!xmlReader.atEnd()) {
-                token = xmlReader.readNext();
-
-                if (token == QXmlStreamReader::EndElement && xmlReader.name() == QLatin1String("path")) {
-                    break; // End of path element
-                }
-
-                if (token == QXmlStreamReader::StartElement) {
-                    if (xmlReader.name() == QLatin1String("filename")) {
-                        token = xmlReader.readNext();
-                        if (token == QXmlStreamReader::Characters) {
-                            filename = xmlReader.text().toString();
-                        }
-                    }
-                }
-            }
-            
-            // Add the filename to the table if we got one
-            if (!filename.isEmpty()) {
-                int row = mUnconnectedFieldsTable->rowCount();
-                mUnconnectedFieldsTable->insertRow(row);
-                mUnconnectedFieldsTable->setItem(row, 0, new QTableWidgetItem(filename));
-                qDebug() << "Added file to table:" << filename;
-            }
-        }
-    }
-
-    if (!foundFiles) {
-        qDebug() << "No files found in unconnected_fields XML";
-        mUnconnectedFieldsTable->insertRow(0);
-        mUnconnectedFieldsTable->setItem(0, 0, new QTableWidgetItem("No files found"));
-    }
-
-    if (xmlReader.hasError()) {
-        qDebug() << "XML parsing error:" << xmlReader.errorString();
-        mUnconnectedFieldsTable->insertRow(0);
-        mUnconnectedFieldsTable->setItem(0, 0, new QTableWidgetItem("XML Error"));
-        mUnconnectedFieldsTable->insertRow(1);
-        mUnconnectedFieldsTable->setItem(1, 0, new QTableWidgetItem(xmlReader.errorString()));
-    }
-}
-
 void MainWindow::parseAllPathsXml(const QByteArray &xmlData)
 {
     // Clear existing data
@@ -4943,7 +5200,7 @@ void MainWindow::parseAllPathsXml(const QByteArray &xmlData)
 
 void MainWindow::addFarmToServer(const QString &name)
 {
-    QUrl url("http://192.168.200.1:8080/add_farm");
+    QUrl url(getServerBaseUrl() + "/add_farm");
     QUrlQuery query;
     query.addQueryItem("name", name);
     url.setQuery(query);
@@ -4973,7 +5230,7 @@ void MainWindow::addFarmToServer(const QString &name)
 
 void MainWindow::updateFarmOnServer(int farmId, const QString &name, double latitude, double longitude)
 {
-    QUrl url("http://192.168.200.1:8080/edit_farm");
+    QUrl url(getServerBaseUrl() + "/edit_farm");
     QUrlQuery query;
     query.addQueryItem("id", QString::number(farmId));
     query.addQueryItem("name", name);
@@ -5006,7 +5263,7 @@ void MainWindow::updateFarmOnServer(int farmId, const QString &name, double lati
 
 void MainWindow::deleteFarmFromServer(int farmId)
 {
-    QUrl url("http://192.168.200.1:8080/remove_farm");
+    QUrl url(getServerBaseUrl() + "/remove_farm");
     QUrlQuery query;
     query.addQueryItem("id", QString::number(farmId));
     url.setQuery(query);
@@ -5036,7 +5293,7 @@ void MainWindow::deleteFarmFromServer(int farmId)
 
 void MainWindow::fetchFieldXml(int fieldId, const QString &fieldName)
 {
-    QUrl url("http://192.168.200.1:8080/field");
+    QUrl url(getServerBaseUrl() + "/field");
     QUrlQuery query;
     query.addQueryItem("id", QString::number(fieldId));
     url.setQuery(query);
@@ -5120,7 +5377,7 @@ void MainWindow::onFieldDataChanged(const QModelIndex &topLeft, const QModelInde
 
 void MainWindow::addFieldToServer(const QString &name, int farmId, const QString &filename)
 {
-    QUrl url("http://192.168.200.1:8080/add_field");
+    QUrl url(getServerBaseUrl() + "/add_field");
     QUrlQuery query;
     query.addQueryItem("name", name);
     query.addQueryItem("farm_id", QString::number(farmId));
@@ -5157,7 +5414,7 @@ void MainWindow::updateFieldOnServer(int fieldId, const QString &name, const QSt
 {
     qDebug() << "updateFieldOnServer called with fieldId:" << fieldId << "name:" << name << "filename:" << filename;
     
-    QUrl url("http://192.168.200.1:8080/edit_field");
+    QUrl url(getServerBaseUrl() + "/edit_field");
     QUrlQuery query;
     query.addQueryItem("id", QString::number(fieldId));
     query.addQueryItem("name", name);
@@ -5203,7 +5460,7 @@ void MainWindow::updateFieldOnServer(int fieldId, const QString &name, const QSt
 
 void MainWindow::deleteFieldFromServer(int fieldId)
 {
-    QUrl url("http://192.168.200.1:8080/remove_field");
+    QUrl url(getServerBaseUrl() + "/remove_field");
     QUrlQuery query;
     query.addQueryItem("id", QString::number(fieldId));
     url.setQuery(query);
@@ -5236,7 +5493,7 @@ void MainWindow::deleteFieldFromServer(int fieldId)
 
 void MainWindow::addPathToServer(const QString &name, int fieldId)
 {
-    QUrl url("http://192.168.200.1:8080/add_path");
+    QUrl url(getServerBaseUrl() + "/add_path");
     QUrlQuery query;
     query.addQueryItem("name", name);
     query.addQueryItem("field", QString::number(fieldId));
@@ -5267,7 +5524,7 @@ void MainWindow::addPathToServer(const QString &name, int fieldId)
 
 void MainWindow::updatePathOnServer(int pathId, const QString &name)
 {
-    QUrl url("http://192.168.200.1:8080/edit_path");
+    QUrl url(getServerBaseUrl() + "/edit_path");
     QUrlQuery query;
     query.addQueryItem("id", QString::number(pathId));
     query.addQueryItem("name", name);
@@ -5306,7 +5563,7 @@ void MainWindow::updatePathOnServer(int pathId, const QString &name)
 
 void MainWindow::deletePathFromServer(int pathId)
 {
-    QUrl url("http://192.168.200.1:8080/remove_path");
+    QUrl url(getServerBaseUrl() + "/remove_path");
     QUrlQuery query;
     query.addQueryItem("id", QString::number(pathId));
     url.setQuery(query);
@@ -5365,7 +5622,7 @@ void MainWindow::onAddMachineButtonClicked()
     }
     
     // Create the URL with query parameters
-    QUrl url("http://192.168.200.1:8080/add_machine");
+    QUrl url(getServerBaseUrl() + "/add_machine");
     QUrlQuery query;
     query.addQueryItem("name", name);
     query.addQueryItem("ip", ip);
@@ -5417,37 +5674,8 @@ void MainWindow::on_MapRemovePixmapsButton_clicked()
 void MainWindow::on_tcpConnectButton_clicked()
 {
     mTcpClientMulti->disconnectAll();
-    removeCars();
-    ui->carsWidget->clear();
 
-    QString connectIpText = ui->tcpConnEdit->toPlainText().trimmed();
-
-    // Prioritize selected machine in the sidebar machinesTable or machines tab table view
-    QModelIndexList selectedRows = ui->machinesTable->selectionModel()->selectedRows();
-    if (selectedRows.isEmpty()) {
-        selectedRows = ui->tableViewMachines->selectionModel()->selectedRows();
-    }
-    
-    if (!selectedRows.isEmpty()) {
-        int row = selectedRows.first().row();
-        QString selectedIp;
-        
-        // Find which table is selected and get the IP
-        if (ui->machinesTable->selectionModel()->hasSelection()) {
-            QTableWidgetItem* ipItem = ui->machinesTable->item(row, 1);
-            if (ipItem) selectedIp = ipItem->text().trimmed();
-        } else {
-            QStandardItem* ipItem = machinesModel->item(row, 1);
-            if (ipItem) selectedIp = ipItem->text().trimmed();
-        }
-        
-        if (!selectedIp.isEmpty() && selectedIp != "None" && selectedIp != "Loading..." && selectedIp != "XML Error" && selectedIp != "No machines") {
-            connectIpText = selectedIp;
-            ui->tcpConnEdit->setPlainText(selectedIp); // Sync the edit box
-        }
-    }
-
-    QStringList conns = connectIpText.split("\n");
+    QStringList conns = ui->tcpConnEdit->toPlainText().split("\n");
 
     for (QString c: conns) {
         QStringList ipPort = c.split(":");
@@ -5459,48 +5687,7 @@ void MainWindow::on_tcpConnectButton_clicked()
             mTcpClientMulti->addConnection(ipPort.at(0),
                                            ipPort.at(1).toInt());
         }
-        
-        // Lookup correct machine ID from machinesModel based on IP address
-        int car_id = mCars.size();
-        for (int row = 0; row < machinesModel->rowCount(); ++row) {
-            QStandardItem* ipItem = machinesModel->item(row, 1);
-            if (ipItem && ipItem->text() == ipPort.at(0)) {
-                QStandardItem* nameItem = machinesModel->item(row, 0);
-                if (nameItem) {
-                    bool ok;
-                    int id_val = nameItem->data(Qt::UserRole).toInt(&ok);
-                    if (ok) {
-                        car_id = id_val;
-                        break;
-                    }
-                }
-            }
-        }
-        addCar(car_id, ipPort.at(0), true); // Automatically enable "Poll data" on connection!
-        ui->mapCarBox->setValue(car_id); // Automatically select and highlight the connected car on the map!
-        ui->mapFollowBox->setChecked(false); // Do not follow ENU car (which can be uninitialized at 0,0) by default
-        ui->mapStreamNmeaFollowBox->setChecked(false); // Let the user toggle high-precision GPS tracking manually to prevent GUI thread congestion
-        // Kartan ska använda styrkortets ENU-referens, inte den första RTK-punkten.
-        // Annars räknar kartan och styrkortet från olika nollpunkter och bilen
-        // (blå/rosa) hamnar förskjuten mot RTK-punkterna (grön/gul).
-        ui->mapStreamNmeaZeroEnuBox->setChecked(false);
-        mPacketInterface->getEnuRef(car_id);
-
-        // Automatically connect to port 2948 NMEA stream (rtkrcv) for real-time RTK satellites and age updates!
-        ui->mapStreamNmeaServerEdit->setText(ipPort.at(0));
-        ui->mapStreamNmeaPortBox->setValue(2948);
-        // Bara för status (satelliter, RTK, ålder) och nollpunkten: rita inte ut
-        // var roboten kört. Connect-knappen i NMEA-rutan slår på spåret igen.
-        mNmeaDrawTrace = false;
-        mNmea->connectClientTcp(ipPort.at(0), 2948);
-        mConnectedIp = ipPort.at(0);
-    }
-
-    // Nollpunkten sätts där roboten står så fort första GPS-positionen kommer
-    // från rtkrcv (se nmeaGgaRx), vid varje anslutning.
-    mAutoEnuRefPending = !connectIpText.isEmpty();
-    if (mAutoEnuRefPending) {
-        qDebug() << "Väntar på robotens GPS-position för att sätta kartans nollpunkt...";
+        addCar(mCars.size(),ipPort.at(0));
     }
 }
 
@@ -7179,99 +7366,6 @@ bool MainWindow::onLoadLogfile()
     return true;
 };
 
-void MainWindow::onMachinesTableClicked(const QModelIndex &index)
-{
-    qDebug() << "onMachinesTableClicked triggered! Row:" << index.row() << "Column:" << index.column() << "Valid:" << index.isValid();
-    if (index.isValid()) {
-        int row = index.row();
-        QString ip;
-        QString name;
-        
-        if (sender() == ui->machinesTable) {
-            QTableWidgetItem* ipItem = ui->machinesTable->item(row, 1);
-            QTableWidgetItem* nameItem = ui->machinesTable->item(row, 0);
-            if (ipItem) ip = ipItem->text().trimmed();
-            if (nameItem) name = nameItem->text().trimmed();
-        } else {
-            QStandardItem* ipItem = machinesModel->item(row, 1);
-            QStandardItem* nameItem = machinesModel->item(row, 0);
-            if (ipItem) ip = ipItem->text().trimmed();
-            if (nameItem) name = nameItem->text().trimmed();
-        }
-        
-        qDebug() << "onMachinesTableClicked: Found machine Name:" << name << "IP:" << ip;
-        if (!ip.isEmpty() && ip != "None" && ip != "Loading..." && ip != "XML Error" && ip != "No machines") {
-            ui->tcpConnEdit->setPlainText(ip);
-            qDebug() << "onMachinesTableClicked: Successfully updated Connection Edit to" << ip;
-        } else {
-            qDebug() << "onMachinesTableClicked: IP text is invalid or placeholder:" << ip;
-        }
-    }
-}
-
-void MainWindow::onMachinesTableDoubleClicked(const QModelIndex &index)
-{
-    qDebug() << "onMachinesTableDoubleClicked triggered! Row:" << index.row() << "Column:" << index.column() << "Valid:" << index.isValid();
-    if (index.isValid()) {
-        int row = index.row();
-        QString ip;
-        QString name;
-        
-        if (sender() == ui->machinesTable) {
-            QTableWidgetItem* ipItem = ui->machinesTable->item(row, 1);
-            QTableWidgetItem* nameItem = ui->machinesTable->item(row, 0);
-            if (ipItem) ip = ipItem->text().trimmed();
-            if (nameItem) name = nameItem->text().trimmed();
-        } else {
-            QStandardItem* ipItem = machinesModel->item(row, 1);
-            QStandardItem* nameItem = machinesModel->item(row, 0);
-            if (ipItem) ip = ipItem->text().trimmed();
-            if (nameItem) name = nameItem->text().trimmed();
-        }
-        
-        qDebug() << "onMachinesTableDoubleClicked: Found machine Name:" << name << "IP:" << ip;
-        if (!ip.isEmpty() && ip != "None" && ip != "Loading..." && ip != "XML Error" && ip != "No machines") {
-            ui->tcpConnEdit->setPlainText(ip);
-            qDebug() << "onMachinesTableDoubleClicked: Triggering immediate connection to" << ip;
-            on_tcpConnectButton_clicked();
-        } else {
-            qDebug() << "onMachinesTableDoubleClicked: IP text is invalid or placeholder:" << ip;
-        }
-    }
-}
-
-void MainWindow::onMachinesSelectionChanged(const QItemSelection &selected, const QItemSelection &deselected)
-{
-    Q_UNUSED(deselected);
-    QModelIndexList indexes = selected.indexes();
-    qDebug() << "onMachinesSelectionChanged triggered! Selected indexes count:" << indexes.size();
-    if (!indexes.isEmpty()) {
-        int row = indexes.first().row();
-        QString ip;
-        QString name;
-        
-        if (sender() == ui->machinesTable->selectionModel()) {
-            QTableWidgetItem* ipItem = ui->machinesTable->item(row, 1);
-            QTableWidgetItem* nameItem = ui->machinesTable->item(row, 0);
-            if (ipItem) ip = ipItem->text().trimmed();
-            if (nameItem) name = nameItem->text().trimmed();
-        } else {
-            QStandardItem* ipItem = machinesModel->item(row, 1);
-            QStandardItem* nameItem = machinesModel->item(row, 0);
-            if (ipItem) ip = ipItem->text().trimmed();
-            if (nameItem) name = nameItem->text().trimmed();
-        }
-        
-        qDebug() << "onMachinesSelectionChanged: Found machine Name:" << name << "IP:" << ip;
-        if (!ip.isEmpty() && ip != "None" && ip != "Loading..." && ip != "XML Error" && ip != "No machines") {
-            ui->tcpConnEdit->setPlainText(ip);
-            qDebug() << "onMachinesSelectionChanged: Selection changed, updated Connection Edit to" << ip;
-        } else {
-            qDebug() << "onMachinesSelectionChanged: IP text is invalid or placeholder:" << ip;
-        }
-    }
-}
-
 
 void MainWindow::on_listLogFilesView_clicked(const QModelIndex& index) {
     // Note: This function is no longer used - replaced with combo box dropdowns
@@ -7345,6 +7439,7 @@ void MainWindow::on_mapImportNmeaButton_clicked()
                             i_llh[1] = gga.lon;
                             i_llh[2] = gga.height;
                             ui->mapLiveWidget->setEnuRef(i_llh[0], i_llh[1], i_llh[2]);
+                            ui->mapWidgetFileAdmin->setEnuRef(i_llh[0], i_llh[1], i_llh[2]);
                         } else {
                             ui->mapLiveWidget->getEnuRef(i_llh);
                         }
@@ -7375,21 +7470,17 @@ void MainWindow::on_mapImportNmeaButton_clicked()
                         fix_t = "Single";
                         p.setColor(Qt::red);
                     }
-                    int rtk_sats = 0;
-                    if (gga.fix_type == 4 || gga.fix_type == 5) {
-                        rtk_sats = gga.n_sat;
-                    }
 #if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
-                    info = QString("Fix type: %1\n Sats    : %2 (RTK: %3)\n Height  : %4")
-                               .arg(fix_t)
+                    info = QString("Fix type: %s\n Sats    : %d\n Height  : %.2f")
+                               .arg(fix_t.toLocal8Bit().data())
                                .arg(gga.n_sat)
-                               .arg(rtk_sats)
-                               .arg(gga.height, 0, 'f', 2);
+                               .arg(gga.height);
 #else
-                    info.sprintf("Fix type: %s\nSats    : %d (RTK: %d)\nHeight  : %.2f",
+                    info.sprintf("Fix type: %s\n") 
+                                 "Sats    : %d\n") 
+                                 "Height  : %.2f",
                                  fix_t.toLocal8Bit().data(),
                                  gga.n_sat,
-                                 rtk_sats,
                                  gga.height);
 #endif
                     p.setInfo(info);
@@ -7494,7 +7585,6 @@ void MainWindow::on_mapEditHelpButton_clicked()
 
 void MainWindow::on_mapStreamNmeaConnectButton_clicked()
 {
-    mNmeaDrawTrace = true;
     mNmea->connectClientTcp(ui->mapStreamNmeaServerEdit->text(),
                             ui->mapStreamNmeaPortBox->value());
 }
@@ -8046,27 +8136,12 @@ void MainWindow::on_AutopilotPausePushButton_clicked()
 #if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
 
 void MainWindow::pollGamepad() {
-    if (SDL_WasInit(SDL_INIT_GAMECONTROLLER) == 0) {
-        return;
-    }
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
 //        qDebug() << "button type: " << event.type;
         if (event.type == SDL_CONTROLLERBUTTONDOWN || event.type == SDL_CONTROLLERBUTTONUP) {
             qDebug() << "up or down";
             handleButtonEvent(event.cbutton);
-        } else if (event.type == SDL_JOYBUTTONDOWN || event.type == SDL_JOYBUTTONUP) {
-            qDebug() << "joy button up or down";
-            bool pressed = (event.type == SDL_JOYBUTTONDOWN);
-            ui->statusBar->showMessage(QString("Gamepad: Raw Button %1 %2").arg(event.jbutton.button).arg(pressed ? "PRESSED" : "RELEASED"), 3000);
-            
-            // Map common raw button numbers for L1 (Left Shoulder) and R1 (Right Shoulder) as fallbacks!
-            int btn = event.jbutton.button;
-            if (btn == 4 || btn == 6 || btn == 9) { // L1 candidates
-                handleControllerInput(1, pressed ? 1.0f : 0.0f);
-            } else if (btn == 5 || btn == 7 || btn == 10) { // R1 candidates
-                handleControllerInput(3, pressed ? 1.0f : 0.0f);
-            }
         } else if (event.type == SDL_CONTROLLERAXISMOTION) {
 //            qDebug() << "axis";
             handleAxisEvent(event.caxis);
@@ -8075,41 +8150,34 @@ void MainWindow::pollGamepad() {
 }
 
 void MainWindow::handleButtonEvent(const SDL_ControllerButtonEvent& event) {
-//    qDebug() << "button id: " << event.button;
+    qDebug() << "button id: " << event.button;
     bool pressed = (event.state == SDL_PRESSED);
     
-    // Show a live message in the status bar so the user knows exactly which button is registered!
-    QString buttonName;
-    switch (event.button) {
-    case SDL_CONTROLLER_BUTTON_A: buttonName = "A / Cross"; break;
-    case SDL_CONTROLLER_BUTTON_B: buttonName = "B / Circle"; break;
-    case SDL_CONTROLLER_BUTTON_X: buttonName = "X / Square"; break;
-    case SDL_CONTROLLER_BUTTON_Y: buttonName = "Y / Triangle"; break;
-    case SDL_CONTROLLER_BUTTON_BACK: buttonName = "Back / Share"; break;
-    case SDL_CONTROLLER_BUTTON_GUIDE: buttonName = "Guide / PS"; break;
-    case SDL_CONTROLLER_BUTTON_START: buttonName = "Start / Options"; break;
-    case SDL_CONTROLLER_BUTTON_LEFTSTICK: buttonName = "Left Stick Click"; break;
-    case SDL_CONTROLLER_BUTTON_RIGHTSTICK: buttonName = "Right Stick Click"; break;
-    case SDL_CONTROLLER_BUTTON_LEFTSHOULDER: buttonName = "L1 (Left Shoulder)"; break;
-    case SDL_CONTROLLER_BUTTON_RIGHTSHOULDER: buttonName = "R1 (Right Shoulder)"; break;
-    case SDL_CONTROLLER_BUTTON_DPAD_UP: buttonName = "D-Pad Up"; break;
-    case SDL_CONTROLLER_BUTTON_DPAD_DOWN: buttonName = "D-Pad Down"; break;
-    case SDL_CONTROLLER_BUTTON_DPAD_LEFT: buttonName = "D-Pad Left"; break;
-    case SDL_CONTROLLER_BUTTON_DPAD_RIGHT: buttonName = "D-Pad Right"; break;
-    default: buttonName = QString("Button %1").arg(event.button); break;
+    // Map SDL button numbers to action IDs
+    // Action IDs: FRONT_UP=4, FRONT_DOWN=7, REAR_UP=6, REAR_DOWN=5
+    // SDL button 9 (L1) -> FRONT_UP (4)
+    // SDL button 10 (R1) -> REAR_UP (6)
+    if (pressed) {
+        switch (event.button) {
+        case SDL_CONTROLLER_BUTTON_LEFTSHOULDER:  // Button 9
+            controllerAction(mActiveCarId, FRONT_UP);
+            break;
+        case SDL_CONTROLLER_BUTTON_RIGHTSHOULDER:  // Button 10
+            controllerAction(mActiveCarId, REAR_UP);
+            break;
+        }
     }
-    ui->statusBar->showMessage(QString("Gamepad: %1 %2").arg(buttonName).arg(pressed ? "PRESSED" : "RELEASED"), 3000);
-
+    
     switch (event.button) {
-    case SDL_CONTROLLER_BUTTON_LEFTSHOULDER:
+    case SDL_CONTROLLER_BUTTON_LEFTSHOULDER:  // Button 9
         qDebug() << "Button L1" << pressed;
-        mArmL1 = pressed;
-        updateArms();
+        handleControllerInput(1,1.0);
+        //jsButtonChanged(4, pressed);
         break;
-    case SDL_CONTROLLER_BUTTON_RIGHTSHOULDER:
+    case SDL_CONTROLLER_BUTTON_RIGHTSHOULDER:  // Button 10
         qDebug() << "Button R1" << pressed;
-        mArmR1 = pressed;
-        updateArms();
+        handleControllerInput(3,1.0);
+        //jsButtonChanged(5, pressed);
         break;
     }
 }
@@ -8129,15 +8197,18 @@ void MainWindow::handleAxisEvent(const SDL_ControllerAxisEvent& event) {
         handleControllerInput(7,-event.value/32768.0);
         break;
     case SDL_CONTROLLER_AXIS_TRIGGERLEFT:
-        ui->statusBar->showMessage(QString("Gamepad: L2 Trigger %1%").arg((int)((float)event.value / 327.68f)), 1500);
-        // Avtryckaren är analog: nedtryckt över halvvägs, släppt under en fjärdedel.
-        if (!mArmL2 && event.value > 16384) { mArmL2 = true; updateArms(); }
-        else if (mArmL2 && event.value < 8192) { mArmL2 = false; updateArms(); }
+        qDebug() << "Button L2:" << event.value;
+        if (event.value > 10000) {
+            controllerAction(mActiveCarId, FRONT_DOWN);
+        }
+        //jsButtonChanged(6, event.value > 0);
         break;
     case SDL_CONTROLLER_AXIS_TRIGGERRIGHT:
-        ui->statusBar->showMessage(QString("Gamepad: R2 Trigger %1%").arg((int)((float)event.value / 327.68f)), 1500);
-        if (!mArmR2 && event.value > 16384) { mArmR2 = true; updateArms(); }
-        else if (mArmR2 && event.value < 8192) { mArmR2 = false; updateArms(); }
+        qDebug() << "Button R2:" << event.value;
+        if (event.value > 10000) {
+            controllerAction(mActiveCarId, REAR_DOWN);
+        }
+        //jsButtonChanged(7, event.value > 0);
         break;
     }
 }
@@ -8240,6 +8311,17 @@ MainWindow* findMainWindow() {
         }
     }
     return nullptr; // Return nullptr if no MainWindow is found
+}
+
+// Global function to get server base URL
+QString getServerBaseUrl()
+{
+    MainWindow* mw = findMainWindow();
+    if (mw) {
+        return mw->getServerBaseUrl();
+    }
+    // Fallback to default if MainWindow not available
+    return "http://192.168.200.3:8080";
 }
 
 // Missing method implementations
@@ -8506,10 +8588,12 @@ void MainWindow::updateCurrentRoutePointControlStates()
 
 void MainWindow::populateControlStateComboBoxes()
 {
+    qDebug() << "DEBUG: populateControlStateComboBoxes - starting";
     // Clear existing items
     ui->comboBoxAction->clear();
     
     // Get controllers from database
+    qDebug() << "DEBUG: populateControlStateComboBoxes - getting controllers from database";
     QList<ControllerInfo> controllers = db.getAllControllers();
     
     if (controllers.isEmpty()) {
@@ -8529,6 +8613,499 @@ void MainWindow::populateControlStateComboBoxes()
     for (const ControllerInfo &controller : controllers) {
         ui->comboBoxAction->addItem(controller.name, controller.id);
         qDebug() << "Added controller:" << controller.name << "with ID:" << controller.id;
+    }
+}
+
+void MainWindow::fetchAllFarmsDataFileAdmin(int retryCount)
+{
+    qDebug() << "fetchAllFarmsDataFileAdmin: Starting, retryCount:" << retryCount;
+    qDebug() << "DEBUG: fetchAllFarmsDataFileAdmin - checking adminFarmsModel:" << adminFarmsModel;
+    const int MAX_RETRIES = 3;
+    const int RETRY_DELAY_MS = 2000;
+    
+    if (!adminFarmsModel) {
+        qDebug() << "ERROR: adminFarmsModel is null in fetchAllFarmsDataFileAdmin!";
+        return;
+    }
+    
+    QUrl url(getServerBaseUrl() + "/all_farms");
+    QNetworkRequest request(url);
+    request.setTransferTimeout(10000);
+    
+    if (!mNetworkManager) {
+        qDebug() << "ERROR: mNetworkManager is null in fetchAllFarmsDataFileAdmin!";
+        adminFarmsModel->removeRows(0, adminFarmsModel->rowCount());
+        adminFarmsModel->appendRow(new QStandardItem("Error: Network manager not initialized"));
+        return;
+    }
+    
+    // Disconnect signals to prevent reentrancy issues
+    disconnect(ui->comboBoxAdminFarm, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::onFarmSelectedForAdmin);
+    disconnect(ui->comboBoxAdminField, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::onFieldSelectedForAdmin);
+    disconnect(ui->comboBoxAdminPath, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::onPathSelectedForAdmin);
+    
+    // Add loading state to the model
+    adminFarmsModel->removeRows(0, adminFarmsModel->rowCount());
+    adminFarmsModel->appendRow(new QStandardItem(retryCount > 0 ? QString("Retrying... (%1/%2)").arg(retryCount).arg(MAX_RETRIES) : "Loading..."));
+    
+    // Reconnect signals
+    connect(ui->comboBoxAdminFarm, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::onFarmSelectedForAdmin);
+    connect(ui->comboBoxAdminField, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::onFieldSelectedForAdmin);
+    connect(ui->comboBoxAdminPath, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::onPathSelectedForAdmin);
+    
+    qDebug() << "DEBUG: fetchAllFarmsDataFileAdmin - checking mNetworkManager:" << mNetworkManager;
+    QNetworkReply* reply = mNetworkManager->get(request);
+    qDebug() << "DEBUG: fetchAllFarmsDataFileAdmin - network request sent, reply:" << reply;
+    if (!reply) {
+        qDebug() << "ERROR: reply is null in fetchAllFarmsDataFileAdmin!";
+        adminFarmsModel->removeRows(0, adminFarmsModel->rowCount());
+        adminFarmsModel->appendRow(new QStandardItem("Error: Network request failed"));
+        return;
+    }
+    
+    connect(reply, &QNetworkReply::finished, this, [this, reply, retryCount]() {
+        qDebug() << "DEBUG: fetchAllFarmsDataFileAdmin - network reply finished";
+        int statusCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        qDebug() << "HTTP Status Code (all_farms for FileAdmin):" << statusCode;
+        
+        if (reply->error() != QNetworkReply::NoError) {
+            qDebug() << "Network error:" << reply->error() << "-" << reply->errorString();
+        }
+        
+        if (reply->error() == QNetworkReply::NoError && statusCode == 200) {
+            QByteArray xmlData = reply->readAll();
+            qDebug() << "Received XML data from all_farms (size:" << xmlData.size() << ")";
+            
+            if (xmlData.isEmpty()) {
+                qDebug() << "Empty response received from all_farms";
+                QMetaObject::invokeMethod(this, [this]() {
+                    adminFarmsModel->removeRows(0, adminFarmsModel->rowCount());
+                    adminFarmsModel->appendRow(new QStandardItem("No data"));
+                });
+            } else {
+                // Parse the XML and populate the model
+                QMetaObject::invokeMethod(this, [this, xmlData]() {
+                    parseAllFarmsXmlFileAdmin(xmlData);
+                });
+            }
+        } else {
+            qDebug() << "Error fetching all_farms data:" << reply->errorString();
+            
+            // Retry logic
+            if (retryCount < MAX_RETRIES) {
+                qDebug() << "Retrying all_farms in" << RETRY_DELAY_MS << "ms...";
+                QTimer::singleShot(RETRY_DELAY_MS, this, [this, retryCount]() {
+                    fetchAllFarmsDataFileAdmin(retryCount + 1);
+                });
+            } else {
+                QString errorMsg = reply->errorString();
+                if (statusCode != 200 && statusCode > 0) {
+                    errorMsg = QString("HTTP %1").arg(statusCode);
+                }
+                QMetaObject::invokeMethod(this, [this, errorMsg]() {
+                    adminFarmsModel->removeRows(0, adminFarmsModel->rowCount());
+                    adminFarmsModel->appendRow(new QStandardItem("Error: " + errorMsg));
+                });
+            }
+        }
+        reply->deleteLater();
+    });
+    
+    qDebug() << "Fetching all_farms data from:" << url.toString();
+}
+
+void MainWindow::parseAllFarmsXmlFileAdmin(const QByteArray &xmlData)
+{
+    qDebug() << "parseAllFarmsXmlFileAdmin: Starting";
+    
+    if (!adminFarmsModel) {
+        qDebug() << "ERROR: adminFarmsModel is null!";
+        return;
+    }
+    
+    // Disconnect signals to prevent reentrancy issues
+    disconnect(ui->comboBoxAdminFarm, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::onFarmSelectedForAdmin);
+    
+    // Clear existing data
+    adminFarmsModel->removeRows(0, adminFarmsModel->rowCount());
+    
+    // Parse the XML
+    QXmlStreamReader xmlReader(xmlData);
+    bool foundFarms = false;
+    
+    while (!xmlReader.atEnd()) {
+        QXmlStreamReader::TokenType token = xmlReader.readNext();
+        
+        if (token == QXmlStreamReader::StartElement && xmlReader.name() == QLatin1String("location")) {
+            QString id, name;
+            
+            while (!xmlReader.atEnd()) {
+                token = xmlReader.readNext();
+                
+                if (token == QXmlStreamReader::EndElement && xmlReader.name() == QLatin1String("location")) {
+                    break;
+                }
+                
+                if (token == QXmlStreamReader::StartElement) {
+                    if (xmlReader.name() == QLatin1String("id")) {
+                        token = xmlReader.readNext();
+                        if (token == QXmlStreamReader::Characters) {
+                            id = xmlReader.text().toString();
+                        }
+                    } else if (xmlReader.name() == QLatin1String("name")) {
+                        token = xmlReader.readNext();
+                        if (token == QXmlStreamReader::Characters) {
+                            name = xmlReader.text().toString();
+                        }
+                    }
+                }
+            }
+            
+            if (!name.isEmpty()) {
+                QStandardItem* item = new QStandardItem(name);
+                if (!id.isEmpty()) {
+                    item->setData(id, Qt::UserRole); // Store ID as user data
+                }
+                adminFarmsModel->appendRow(item);
+                foundFarms = true;
+                qDebug() << "Added farm to admin tab:" << name << "(ID:" << id << ")";
+            }
+        }
+    }
+    
+    if (!foundFarms) {
+        qDebug() << "No farms found in admin farms XML";
+        adminFarmsModel->appendRow(new QStandardItem("No farms found"));
+    }
+    
+    if (xmlReader.hasError()) {
+        qDebug() << "XML parsing error:" << xmlReader.errorString();
+        adminFarmsModel->appendRow(new QStandardItem("XML Error: " + xmlReader.errorString()));
+    }
+    
+    // Reconnect signals
+    connect(ui->comboBoxAdminFarm, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::onFarmSelectedForAdmin);
+    
+    qDebug() << "parseAllFarmsXmlFileAdmin: Farms loaded:" << adminFarmsModel->rowCount();
+}
+
+void MainWindow::on_moveFieldButton_clicked()
+{
+    qDebug() << "Move Field button clicked";
+    
+    // Get selected farm from comboBoxAdminFarm
+    int selectedFarmIndex = ui->comboBoxAdminFarm->currentIndex();
+    if (selectedFarmIndex < 0) {
+        qDebug() << "No farm selected";
+        QMessageBox::information(this, "No Farm Selected", "Please select a farm first.");
+        return;
+    }
+    
+    QString farmName = ui->comboBoxAdminFarm->currentText();
+    if (farmName.isEmpty()) {
+        qDebug() << "No farm name found";
+        QMessageBox::information(this, "Error", "Please select a valid farm.");
+        return;
+    }
+    qDebug() << "Selected farm:" << farmName;
+    
+    // Get selected field from comboBoxAdminField
+    int selectedFieldIndex = ui->comboBoxAdminField->currentIndex();
+    if (selectedFieldIndex < 0) {
+        qDebug() << "No field selected";
+        QMessageBox::information(this, "No Field Selected", "Please select a field first.");
+        return;
+    }
+    
+    QString fieldLocation = ui->comboBoxAdminField->currentText();
+    qDebug() << "Selected field:" << fieldLocation;
+    
+    // Call the web service to register the field
+    QUrl url(getServerBaseUrl() + "/field_register");
+    QUrlQuery query;
+    query.addQueryItem("farm", farmName);
+    query.addQueryItem("field", fieldLocation);
+    url.setQuery(query);
+    
+    qDebug() << "Calling field_register with URL:" << url.toString();
+    
+    QNetworkRequest request(url);
+    request.setTransferTimeout(10000);
+    
+    QNetworkReply* reply = mNetworkManager->get(request);
+    
+    connect(reply, &QNetworkReply::finished, this, [this, reply, fieldLocation]() {
+        int statusCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        qDebug() << "Field register HTTP Status Code:" << statusCode;
+        
+        if (reply->error() == QNetworkReply::NoError && statusCode == 200) {
+            qDebug() << "Field registered successfully";
+            QMessageBox::information(this, "Success", "Field moved successfully!");
+            // Refresh the admin fields combo boxes
+            refreshAdminFields();
+        } else {
+            qDebug() << "Error registering field:" << reply->errorString();
+            QMessageBox::critical(this, "Error", "Failed to move field: " + reply->errorString());
+        }
+        reply->deleteLater();
+    });
+
+    // Farms are already loaded by fetchAllFarmsDataFileAdmin(3) called in the constructor
+}
+
+void MainWindow::refreshAdminFields()
+{
+    qDebug() << "Refreshing admin fields combo boxes";
+    
+    // Fetch farms data (this will clear and repopulate the combo boxes)
+    fetchAllFarmsDataFileAdmin(0);
+}
+
+void MainWindow::fetchUnconnectedFieldsData(int retryCount)
+{
+    qDebug() << "fetchUnconnectedFieldsData: Starting, retryCount:" << retryCount;
+    const int MAX_RETRIES = 3;
+    const int RETRY_DELAY_MS = 2000; // 2 seconds between retries
+
+    if (!mUnconnectedFieldsTable) {
+        qDebug() << "ERROR: mUnconnectedFieldsTable is null in fetchUnconnectedFieldsData!";
+        return;
+    }
+
+    QUrl url(getServerBaseUrl() + "/unconnected_fields");
+    QNetworkRequest request(url);
+    request.setTransferTimeout(10000);
+
+    QNetworkReply* reply = mNetworkManager->get(request);
+    if (!reply) {
+        qDebug() << "ERROR: reply is null in fetchUnconnectedFieldsData!";
+        mUnconnectedFieldsTable->setRowCount(0);
+        mUnconnectedFieldsTable->insertRow(0);
+        mUnconnectedFieldsTable->setItem(0, 0, new QTableWidgetItem("Error: Network request failed"));
+        return;
+    }
+
+    connect(reply, &QNetworkReply::finished, this, [this, reply, retryCount]() {
+        int statusCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        qDebug() << "HTTP Status Code (unconnected_fields):" << statusCode;
+        
+        if (reply->error() != QNetworkReply::NoError) {
+            qDebug() << "Network error:" << reply->error() << "-" << reply->errorString();
+        }
+        
+        if (reply->error() == QNetworkReply::NoError && statusCode == 200) {
+            QByteArray xmlData = reply->readAll();
+            qDebug() << "Received XML data from unconnected_fields (size:" << xmlData.size() << ")";
+            
+            if (!xmlData.isEmpty()) {
+                parseUnconnectedFieldsXml(xmlData);
+            } else {
+                qDebug() << "Empty response for unconnected_fields";
+                mUnconnectedFieldsTable->setRowCount(0);
+                mUnconnectedFieldsTable->insertRow(0);
+                mUnconnectedFieldsTable->setItem(0, 0, new QTableWidgetItem("No unconnected fields data"));
+            }
+        } else {
+            qDebug() << "Error fetching unconnected_fields data:" << reply->errorString();
+            
+            // Retry logic
+            if (retryCount < MAX_RETRIES) {
+                qDebug() << "Retrying unconnected_fields in" << RETRY_DELAY_MS << "ms...";
+                QTimer::singleShot(RETRY_DELAY_MS, this, [this, retryCount]() {
+                    fetchUnconnectedFieldsData(retryCount + 1);
+                });
+            } else {
+                QString errorMsg = reply->errorString();
+                if (statusCode != 200 && statusCode > 0) {
+                    errorMsg = QString("HTTP %1").arg(statusCode);
+                }
+                mUnconnectedFieldsTable->setRowCount(0);
+                mUnconnectedFieldsTable->insertRow(0);
+                mUnconnectedFieldsTable->setItem(0, 0, new QTableWidgetItem("Error: " + errorMsg));
+            }
+        }
+        reply->deleteLater();
+    });
+    
+    qDebug() << "Fetching unconnected_fields data from:" << url.toString();
+}
+
+void MainWindow::parseUnconnectedFieldsXml(const QByteArray &xmlData)
+{
+    qDebug() << "parseUnconnectedFieldsXml: Starting";
+    
+    if (!mUnconnectedFieldsTable) {
+        qDebug() << "ERROR: mUnconnectedFieldsTable is null in parseUnconnectedFieldsXml!";
+        return;
+    }
+    
+    // Clear existing data
+    mUnconnectedFieldsTable->setRowCount(0);
+    
+    // Parse the XML
+    QXmlStreamReader xmlReader(xmlData);
+    bool foundFiles = false;
+    
+    while (!xmlReader.atEnd()) {
+        QXmlStreamReader::TokenType token = xmlReader.readNext();
+        
+        if (token == QXmlStreamReader::StartElement && xmlReader.name() == QLatin1String("file")) {
+            QString filename;
+            
+            while (!xmlReader.atEnd()) {
+                token = xmlReader.readNext();
+                
+                if (token == QXmlStreamReader::EndElement && xmlReader.name() == QLatin1String("file")) {
+                    break;
+                }
+                
+                if (token == QXmlStreamReader::StartElement && xmlReader.name() == QLatin1String("name")) {
+                    token = xmlReader.readNext();
+                    if (token == QXmlStreamReader::Characters) {
+                        filename = xmlReader.text().toString();
+                    }
+                }
+            }
+            
+            if (!filename.isEmpty()) {
+                int row = mUnconnectedFieldsTable->rowCount();
+                mUnconnectedFieldsTable->insertRow(row);
+                mUnconnectedFieldsTable->setItem(row, 0, new QTableWidgetItem(filename));
+                foundFiles = true;
+                qDebug() << "Added unconnected file:" << filename;
+            }
+        }
+    }
+    
+    if (!foundFiles) {
+        qDebug() << "No files found in unconnected fields XML";
+        mUnconnectedFieldsTable->insertRow(0);
+        mUnconnectedFieldsTable->setItem(0, 0, new QTableWidgetItem("No unconnected files found"));
+    }
+    
+    if (xmlReader.hasError()) {
+        qDebug() << "XML parsing error:" << xmlReader.errorString();
+        mUnconnectedFieldsTable->insertRow(0);
+        mUnconnectedFieldsTable->setItem(0, 0, new QTableWidgetItem("XML Error: " + xmlReader.errorString()));
+    }
+    
+    qDebug() << "parseUnconnectedFieldsXml: Files loaded:" << mUnconnectedFieldsTable->rowCount();
+}
+
+void MainWindow::onUnconnectedFieldsTableItemClicked(QTableWidgetItem *item)
+{
+    qDebug() << "onUnconnectedFieldsTableItemClicked: called";
+    
+    if (!item || !mUnconnectedFieldsTable || !mMapWidgetFileAdmin) {
+        qDebug() << "ERROR: Invalid parameters in onUnconnectedFieldsTableItemClicked";
+        return;
+    }
+    
+    int row = item->row();
+    QTableWidgetItem *filenameItem = mUnconnectedFieldsTable->item(row, 0);
+    if (!filenameItem) {
+        qDebug() << "ERROR: No filename item at row" << row;
+        return;
+    }
+    
+    QString filename = filenameItem->text();
+    qDebug() << "Selected unconnected file:" << filename;
+    
+    // Here you would typically load the file and display it on the map
+    // For now, just show the filename in the status
+    showStatusInfo("Selected unconnected file: " + filename, true);
+}
+
+void MainWindow::onMachinesTableClicked(const QModelIndex &index)
+{
+    qDebug() << "onMachinesTableClicked triggered! Row:" << index.row() << "Column:" << index.column() << "Valid:" << index.isValid();
+    if (index.isValid()) {
+        int row = index.row();
+        QString ip;
+        QString name;
+        
+        if (sender() == ui->machinesTable) {
+            QTableWidgetItem* ipItem = ui->machinesTable->item(row, 1);
+            QTableWidgetItem* nameItem = ui->machinesTable->item(row, 0);
+            if (ipItem) ip = ipItem->text().trimmed();
+            if (nameItem) name = nameItem->text().trimmed();
+        } else {
+            QStandardItem* ipItem = machinesModel->item(row, 1);
+            QStandardItem* nameItem = machinesModel->item(row, 0);
+            if (ipItem) ip = ipItem->text().trimmed();
+            if (nameItem) name = nameItem->text().trimmed();
+        }
+        
+        qDebug() << "onMachinesTableClicked: Found machine Name:" << name << "IP:" << ip;
+        if (!ip.isEmpty() && ip != "None" && ip != "Loading..." && ip != "XML Error" && ip != "No machines") {
+            ui->tcpConnEdit->setPlainText(ip);
+            qDebug() << "onMachinesTableClicked: Successfully updated Connection Edit to" << ip;
+        } else {
+            qDebug() << "onMachinesTableClicked: IP text is invalid or placeholder:" << ip;
+        }
+    }
+}
+
+void MainWindow::onMachinesTableDoubleClicked(const QModelIndex &index)
+{
+    qDebug() << "onMachinesTableDoubleClicked triggered! Row:" << index.row() << "Column:" << index.column() << "Valid:" << index.isValid();
+    if (index.isValid()) {
+        int row = index.row();
+        QString ip;
+        QString name;
+        
+        if (sender() == ui->machinesTable) {
+            QTableWidgetItem* ipItem = ui->machinesTable->item(row, 1);
+            QTableWidgetItem* nameItem = ui->machinesTable->item(row, 0);
+            if (ipItem) ip = ipItem->text().trimmed();
+            if (nameItem) name = nameItem->text().trimmed();
+        } else {
+            QStandardItem* ipItem = machinesModel->item(row, 1);
+            QStandardItem* nameItem = machinesModel->item(row, 0);
+            if (ipItem) ip = ipItem->text().trimmed();
+            if (nameItem) name = nameItem->text().trimmed();
+        }
+        
+        qDebug() << "onMachinesTableDoubleClicked: Found machine Name:" << name << "IP:" << ip;
+        if (!ip.isEmpty() && ip != "None" && ip != "Loading..." && ip != "XML Error" && ip != "No machines") {
+            ui->tcpConnEdit->setPlainText(ip);
+            qDebug() << "onMachinesTableDoubleClicked: Triggering immediate connection to" << ip;
+            on_tcpConnectButton_clicked();
+        } else {
+            qDebug() << "onMachinesTableDoubleClicked: IP text is invalid or placeholder:" << ip;
+        }
+    }
+}
+
+void MainWindow::onMachinesSelectionChanged(const QItemSelection &selected, const QItemSelection &deselected)
+{
+    Q_UNUSED(deselected);
+    QModelIndexList indexes = selected.indexes();
+    qDebug() << "onMachinesSelectionChanged triggered! Selected indexes count:" << indexes.size();
+    if (!indexes.isEmpty()) {
+        int row = indexes.first().row();
+        QString ip;
+        QString name;
+        
+        if (sender() == ui->machinesTable->selectionModel()) {
+            QTableWidgetItem* ipItem = ui->machinesTable->item(row, 1);
+            QTableWidgetItem* nameItem = ui->machinesTable->item(row, 0);
+            if (ipItem) ip = ipItem->text().trimmed();
+            if (nameItem) name = nameItem->text().trimmed();
+        } else {
+            QStandardItem* ipItem = machinesModel->item(row, 1);
+            QStandardItem* nameItem = machinesModel->item(row, 0);
+            if (ipItem) ip = ipItem->text().trimmed();
+            if (nameItem) name = nameItem->text().trimmed();
+        }
+        
+        qDebug() << "onMachinesSelectionChanged: Found machine Name:" << name << "IP:" << ip;
+        if (!ip.isEmpty() && ip != "None" && ip != "Loading..." && ip != "XML Error" && ip != "No machines") {
+            ui->tcpConnEdit->setPlainText(ip);
+            qDebug() << "onMachinesSelectionChanged: Selection changed, updated Connection Edit to" << ip;
+        } else {
+            qDebug() << "onMachinesSelectionChanged: IP text is invalid or placeholder:" << ip;
+        }
     }
 }
 

@@ -4266,6 +4266,16 @@
          </layout>
         </item>
         <item>
+         <widget class="QTableWidget" name="unconnectedFieldsTable">
+          <property name="minimumSize">
+           <size>
+            <width>200</width>
+            <height>0</height>
+           </size>
+          </property>
+         </widget>
+        </item>
+        <item>
          <widget class="MapWidget" name="mapWidgetFileAdmin" native="true">
           <property name="sizePolicy">
            <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
