@@ -3204,103 +3204,76 @@
         <item>
          <layout class="QGridLayout" name="gridLayout_3">
           <item row="5" column="2">
-           <widget class="QLineEdit" name="filenameEdit"/>
-          </item>
-          <item row="4" column="2">
            <widget class="QLineEdit" name="fieldnameEdit">
             <property name="enabled">
              <bool>true</bool>
             </property>
            </widget>
           </item>
-          <item row="2" column="2">
-           <widget class="QPushButton" name="pushButton_farm">
-            <property name="text">
-             <string>Add farm</string>
-            </property>
-           </widget>
-          </item>
-          <item row="12" column="2">
-           <widget class="QLineEdit" name="pathnameEdit"/>
-          </item>
-          <item row="13" column="2">
-           <widget class="QPushButton" name="pushButton_path">
-            <property name="text">
-             <string>Add path</string>
-            </property>
-           </widget>
-          </item>
-          <item row="10" column="2">
-           <widget class="QLabel" name="label_area_ha">
-            <property name="text">
-             <string/>
-            </property>
-           </widget>
-          </item>
-          <item row="12" column="0">
-           <widget class="QLabel" name="label_6">
-            <property name="text">
-             <string>Path name:</string>
-            </property>
-           </widget>
-          </item>
-          <item row="5" column="0">
+          <item row="6" column="0">
            <widget class="QLabel" name="label">
             <property name="text">
              <string>File name:</string>
             </property>
            </widget>
           </item>
-          <item row="8" column="2">
-           <widget class="QPushButton" name="pushButton_load_shapefile">
+          <item row="2" column="0">
+           <widget class="QLabel" name="label_16">
             <property name="text">
-             <string>Load Shape file</string>
+             <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;span style=&quot; font-weight:700;&quot;&gt;Name:&lt;/span&gt;&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
             </property>
            </widget>
           </item>
-          <item row="0" column="0">
+          <item row="11" column="2">
+           <widget class="QLabel" name="label_area_ha">
+            <property name="text">
+             <string/>
+            </property>
+           </widget>
+          </item>
+          <item row="5" column="0">
+           <widget class="QLabel" name="labelFieldname">
+            <property name="text">
+             <string>Field name:</string>
+            </property>
+           </widget>
+          </item>
+          <item row="1" column="0">
            <widget class="QLabel" name="labelFarm">
             <property name="text">
              <string>Farm</string>
             </property>
            </widget>
           </item>
-          <item row="3" column="2">
-           <widget class="QTableView" name="fieldTable">
+          <item row="12" column="2">
+           <widget class="QTableView" name="pathTable">
             <property name="selectionBehavior">
              <enum>QAbstractItemView::SelectItems</enum>
             </property>
            </widget>
           </item>
-          <item row="11" column="0">
-           <widget class="QLabel" name="labelPaths">
-            <property name="text">
-             <string>Paths</string>
-            </property>
-           </widget>
-          </item>
-          <item row="3" column="0">
+          <item row="4" column="0">
            <widget class="QLabel" name="labelFields">
             <property name="text">
              <string>Fields</string>
             </property>
            </widget>
           </item>
-          <item row="6" column="2">
-           <widget class="QCheckBox" name="fencedCheckBox">
-            <property name="text">
-             <string>use electronic fence</string>
-            </property>
-           </widget>
-          </item>
-          <item row="7" column="2">
+          <item row="8" column="2">
            <widget class="QPushButton" name="pushButton_field">
             <property name="text">
              <string>Add field</string>
             </property>
            </widget>
           </item>
-          <item row="0" column="2">
+          <item row="2" column="2">
+           <widget class="QLineEdit" name="locationnameEdit">
+            <property name="enabled">
+             <bool>true</bool>
+            </property>
+           </widget>
+          </item>
+          <item row="1" column="2">
            <widget class="QTableView" name="farmTable">
             <property name="sizePolicy">
              <sizepolicy hsizetype="MinimumExpanding" vsizetype="Fixed">
@@ -3319,47 +3292,84 @@
             </property>
            </widget>
           </item>
-          <item row="4" column="0">
-           <widget class="QLabel" name="labelFieldname">
+          <item row="7" column="2">
+           <widget class="QCheckBox" name="fencedCheckBox">
             <property name="text">
-             <string>Field name:</string>
+             <string>use electronic fence</string>
             </property>
            </widget>
           </item>
-          <item row="1" column="0">
-           <widget class="QLabel" name="label_16">
+          <item row="9" column="2">
+           <widget class="QPushButton" name="pushButton_load_shapefile">
             <property name="text">
-             <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;span style=&quot; font-weight:700;&quot;&gt;Name:&lt;/span&gt;&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+             <string>Load Shape file</string>
             </property>
            </widget>
           </item>
-          <item row="1" column="2">
-           <widget class="QLineEdit" name="locationnameEdit">
-            <property name="enabled">
-             <bool>true</bool>
+          <item row="13" column="0">
+           <widget class="QLabel" name="label_6">
+            <property name="text">
+             <string>Path name:</string>
             </property>
            </widget>
           </item>
-          <item row="10" column="0">
+          <item row="14" column="2">
+           <widget class="QPushButton" name="pushButton_path">
+            <property name="text">
+             <string>Add path</string>
+            </property>
+           </widget>
+          </item>
+          <item row="13" column="2">
+           <widget class="QLineEdit" name="pathnameEdit"/>
+          </item>
+          <item row="6" column="2">
+           <widget class="QLineEdit" name="filenameEdit"/>
+          </item>
+          <item row="3" column="2">
+           <widget class="QPushButton" name="pushButton_farm">
+            <property name="text">
+             <string>Add farm</string>
+            </property>
+           </widget>
+          </item>
+          <item row="12" column="0">
+           <widget class="QLabel" name="labelPaths">
+            <property name="text">
+             <string>Paths</string>
+            </property>
+           </widget>
+          </item>
+          <item row="4" column="2">
+           <widget class="QTableView" name="fieldTable">
+            <property name="selectionBehavior">
+             <enum>QAbstractItemView::SelectItems</enum>
+            </property>
+           </widget>
+          </item>
+          <item row="10" column="2">
+           <widget class="QPushButton" name="pushButton_savefield">
+            <property name="text">
+             <string>Save field</string>
+            </property>
+           </widget>
+          </item>
+          <item row="11" column="0">
            <widget class="QLabel" name="labelArea">
             <property name="text">
              <string>Area:</string>
             </property>
            </widget>
           </item>
-          <item row="11" column="2">
-           <widget class="QTableView" name="pathTable">
-            <property name="selectionBehavior">
-             <enum>QAbstractItemView::SelectItems</enum>
+          <item row="0" column="0">
+           <widget class="QLabel" name="label_12">
+            <property name="text">
+             <string>Server ip</string>
             </property>
            </widget>
           </item>
-          <item row="9" column="2">
-           <widget class="QPushButton" name="pushButton_savefield">
-            <property name="text">
-             <string>Save field</string>
-            </property>
-           </widget>
+          <item row="0" column="2">
+           <widget class="QLineEdit" name="serveripEdit"/>
           </item>
          </layout>
         </item>
