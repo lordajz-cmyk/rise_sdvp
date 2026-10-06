@@ -21,6 +21,7 @@
 #include <QMainWindow>
 #include <QElapsedTimer>
 #include <QLabel>
+#include <QLineEdit>
 #include <QtWidgets>
 #include <QItemSelection>
 #include <QList>
@@ -96,6 +97,9 @@ public:
     explicit MainWindow(QWidget *parent = 0);
     ~MainWindow();
     bool eventFilter(QObject *object, QEvent *e);
+    // Webbserverns adress (gårdar, fält, banor, maskiner), t.ex. "http://192.168.200.1:8080".
+    // Ställs in i fältet Server på fliken Farm.
+    QString getServerBaseUrl() const;
 
     void addCar(int id, QString name, bool pollData = false);
     void removeCars();
@@ -362,6 +366,7 @@ private:
     ActionManager *actionManager;
 
     Ui::MainWindow *ui;
+    QLineEdit *mServerEdit = nullptr;
     bool mConnectingSelected = false; // Guard flag to prevent double connection
     QTimer *mTimer;
     QTimer *mHeartbeatTimer; // periodic heartbeat to vehicles for safety
