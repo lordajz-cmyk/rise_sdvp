@@ -66,6 +66,21 @@
 #define VESC_STEERING 76
 #define LOADING 8
 #define WHEEL_SENSOR                1
+// Hastighetsgivare ZF GS1001 på TX-kontakten (PA2): pulser från en stålskiva med hål.
+// PA2 får intern pull-up (givaren har öppen kollektor).
+#define WHEELSPEED_DIAM             0.30	// m, hjulets diameter — TODO: mät RobAnt
+#define WHEELSPEED_CNTS_PER_REV     13.0	// 13 hål i skivan (Ø170 mm), förutsatt att den sitter på hjulaxeln
+#ifndef IS_ROVMCU	// MP101: hjulpulserna på PA3 med extern pull-up (R127), se pwm_esc.c
+#define WHEELSPEED_PULLUP
+// Vinkelgivare DIS QR30N-360 (0–5 V för 0–360°) på RX-kontakten (PA3) via
+// spänningsdelare R1 = 12k (givare–S), R2 = 22k (S–GND). PA3 blir analog ingång
+// i stället för servoutgång. Vinkeln = (U - CENTER) * DEG_PER_MV.
+#define ANGLE_SENSOR_PA3
+#define ANGLE_SENSOR_DIVIDER        ((12.0 + 22.0) / 22.0)
+#define ANGLE_SENSOR_CENTER_MV      2500.0	// givarens spänning rakt fram — TODO: kalibrera
+#define ANGLE_SENSOR_DEG_PER_MV     0.072	// 360° / 5000 mV; byt tecken om vinkeln går åt fel håll
+#define ANGLE_SENSOR_MIN_MV         100.0	// under detta: magneten saknas/givarfel
+#endif	// IS_ROVMCU: vinkelgivaren på PA3 finns bara på det gamla kortet
 #endif
 
 #ifdef DRANGEN_GAMMAL
@@ -228,7 +243,27 @@
 #define AP_ROUTE_SIZE				2000
 
 // Board-dependent settings
-#if IS_F9_BOARD
+#ifdef IS_ROVMCU
+#define UBLOX_IS_F9P                 1
+#define LED_RED_GPIO                 GPIOC
+#define LED_RED_PIN                  11
+#define LED_GREEN_GPIO               GPIOC
+#define LED_GREEN_PIN                10
+#define CAN1_RX_GPIO                 GPIOB
+#define CAN1_RX_PIN                  8
+#define CAN1_TX_GPIO                 GPIOB
+#define CAN1_TX_PIN                  9
+#define HAS_BMI160                   0
+#define HAS_BMI270                   1
+#define HAS_ID_SW                    0
+#define PWR_5V_R1                    20000.0
+#define PWR_5V_R2                    10000.0
+// MP101 has no populated battery divider. Keep battery vin on the existing
+// VESC/CAN telemetry path; PC1/IN11 measures the regulated 5 V rail only.
+#ifdef USE_ADCONV_FOR_VIN
+#undef USE_ADCONV_FOR_VIN
+#endif
+#elif IS_F9_BOARD
 #define UBLOX_IS_F9P				1
 #define LED_RED_GPIO				GPIOC
 #define LED_RED_PIN					10
@@ -258,17 +293,11 @@
 #define VIN_R2						1500.0
 #endif
 
-// ROV_MCU (Upwis MP101_323): F9-kortets stiftlayout (IS_F9_BOARD) med CM5 och
-// STM32F415VGT, men BMI270 i stället för BMI160. Övriga skillnader (CAN-
-// transceivrarnas SILENT-ben, riktning på DI1-4, GPS 2:s reset) sköts av
-// rovmcu_board_init() i main.c. Stiftkarta: Embedded/RC_Controller/ROVMCU.md.
-#ifdef IS_ROVMCU
-#undef HAS_BMI160
-#define HAS_BMI160					0
-#define HAS_BMI270					1
-#endif
 #ifndef HAS_BMI270
 #define HAS_BMI270					0
+#endif
+#if HAS_BMI160 && HAS_BMI270
+#error "Select only one IMU driver"
 #endif
 
 #ifndef M_PI

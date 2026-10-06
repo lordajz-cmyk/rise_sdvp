@@ -143,9 +143,7 @@ void pos_init(void) {
 	chMtxObjectInit(&m_mutex_gps);
 
 #if HAS_BMI270
-	// ROV_MCU: samma återanrop och enheter som BMI160, se imu/bmi270_wrapper.c
-	bmi270_wrapper_init(500);
-	bmi270_wrapper_set_read_callback(mpu9150_read);
+	// MP101 sampling starts after all application drivers have initialized.
 #elif HAS_BMI160
 	commands_printf("Has BMI 160\n");
 	bmi160_wrapper_init(500);
@@ -863,6 +861,15 @@ void broadcastisInititated(void) {
 	comm_usb_send_packet((unsigned char*)print_buffer, 2);
 }
 
+
+#if HAS_BMI270
+void pos_start_imu(void) {
+	// The callback polls CAN and uses TIM6: main starts it only after those
+	// drivers, USB, configuration and position state are ready.
+	bmi270_wrapper_set_read_callback(mpu9150_read);
+	bmi270_wrapper_init(500);
+}
+#endif
 
 static void mpu9150_read(float *accel, float *gyro, float *mag) {
 	static unsigned int cnt_last = 0;

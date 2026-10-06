@@ -46,6 +46,10 @@
 #include <QUrl>
 #include <QUrlQuery>
 #include <QTimer>
+#include <QSettings>
+
+// Mapros webbserver i WireGuard-tunneln, används när inget annat är inställt.
+static const char *STANDARD_SERVER = "192.168.200.1:8080";
 #include <QLoggingCategory>
 #include <QtSql>
 #include <QtCharts>
@@ -149,15 +153,27 @@ MainWindow::MainWindow(QWidget *parent) :
 {
     qDebug() << "DEBUG: MainWindow constructor - starting";
     ui->setupUi(this);
-    qDebug() << "DEBUG: MainWindow constructor - UI setup complete";
-    
-    // Load saved server IP from settings
-    QSettings settings("SLU", "RControlStation");
-    QString savedServerIp = settings.value("serverip", "").toString();
-    if (!savedServerIp.isEmpty()) {
-        ui->serveripEdit->setText(savedServerIp);
+
+    // Webbserverns adress: inställbar för organisationer med egen server (idé och första
+    // version: Gunnar Larsson, SLU). Sparas direkt när den ändras. Tomt = vår server.
+    {
+        QString sparad = QSettings("RControlStation", "server").value("adress").toString();
+        if (sparad.isEmpty()) {
+            sparad = QSettings("SLU", "RControlStation").value("serverip").toString(); // Gunnars tidigare inställning
+        }
+        mServerEdit = new QLineEdit(sparad, this);
+        mServerEdit->setObjectName("serveripEdit");
+        mServerEdit->setPlaceholderText(QString(STANDARD_SERVER) + " (Mapro)");
+        mServerEdit->setToolTip("Webbserverns adress för gårdar, fält, banor och maskiner, "
+                                "t.ex. 192.168.200.1:8080. Tomt = Mapros server. Port 8080 om ingen anges.");
+        const int rad = ui->gridLayout_3->rowCount();
+        ui->gridLayout_3->addWidget(new QLabel("Server", this), rad, 0);
+        ui->gridLayout_3->addWidget(mServerEdit, rad, 2);
+        connect(mServerEdit, &QLineEdit::editingFinished, this, [this]() {
+            QSettings("RControlStation", "server").setValue("adress", mServerEdit->text().trimmed());
+        });
     }
-    
+
     // Initialize File Administration tab widgets from UI
     qDebug() << "DEBUG: MainWindow constructor - initializing File Administration tab";
     mUnconnectedFieldsTable = ui->unconnectedFieldsTable;
@@ -1897,7 +1913,7 @@ void MainWindow::onAdminFileSelected(int index)
     mMapWidgetFileAdmin->update();
     
     // Load the file from the server via HTTP
-    QUrl url(QString("%1/field/%2").arg(getServerBaseUrl()).arg(filename));
+    QUrl url(getServerBaseUrl() + QString("/field/%1").arg(filename));
     qDebug() << "Fetching field from URL:" << url.toString();
     
     QNetworkRequest request(url);
@@ -3899,7 +3915,7 @@ void MainWindow::fetchPathsForAdminField(int fieldId)
     // Reconnect signals
     connect(ui->comboBoxAdminPath, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::onPathSelectedForAdmin);
     
-    QUrl url(getServerBaseUrl() + "/all_paths");
+    QUrl url(getServerBaseUrl() + "/all_fields");
     QUrlQuery query;
     query.addQueryItem("field", QString::number(fieldId));
     url.setQuery(query);
@@ -3961,6 +3977,11 @@ void MainWindow::loadAdminPath(int pathId)
     QUrl url(QString("%1/field/%2").arg(getServerBaseUrl()).arg(pathId));
     qDebug() << "Fetching field from URL:" << url.toString();
     
+    // Add loading indicator
+    mUnconnectedFieldsTable->insertRow(0);
+    mUnconnectedFieldsTable->setItem(0, 0, new QTableWidgetItem(retryCount > 0 ? QString("Retrying... (%1/%2)").arg(retryCount).arg(MAX_RETRIES) : "Loading..."));
+
+    QUrl url(getServerBaseUrl() + "/unconnected_fields");
     QNetworkRequest request(url);
     request.setTransferTimeout(10000);
     
@@ -4691,7 +4712,7 @@ void MainWindow::fetchVehicleTypes(int retryCount)
                  reply->error() == QNetworkReply::ConnectionRefusedError)) {
                 QTimer::singleShot(RETRY_DELAY_MS, this, [this, retryCount]() {
                     fetchVehicleTypes(retryCount + 1);
-                });
+                });Insåg inte att 
             } else {
                 // If all retries failed, still try to fetch machines data so table shows error state
                 fetchAllMachinesData();
@@ -4756,6 +4777,19 @@ void MainWindow::parseVehicleTypesXml(const QByteArray &xmlData)
             }
         }
     }
+}
+
+void MainWindow::addFieldToServer(const QString &name, int farmId, const QString &filename)
+{
+    QUrl url(getServerBaseUrl() + "/add_field");
+    QUrlQuery query;
+    query.addQueryItem("name", name);
+    query.addQueryItem("farm_id", QString::number(farmId));
+    query.addQueryItem("filename", filename);
+    url.setQuery(query);
+    
+    QNetworkRequest request(url);
+    request.setTransferTimeout(10000);
     
     if (xmlReader.hasError()) {
         qDebug() << "XML parsing error for vehicle_types:" << xmlReader.errorString();
@@ -8707,6 +8741,32 @@ void MainWindow::fetchAllFarmsDataFileAdmin(int retryCount)
                     adminFarmsModel->appendRow(new QStandardItem("Error: " + errorMsg));
                 });
             }
+QString MainWindow::getServerBaseUrl() const
+{
+    QString adress = mServerEdit ? mServerEdit->text().trimmed() : QString();
+    if (adress.isEmpty()) {
+        adress = STANDARD_SERVER;
+    }
+    if (!adress.startsWith("http://") && !adress.startsWith("https://")) {
+        adress = "http://" + adress;
+    }
+    while (adress.endsWith('/')) {
+        adress.chop(1);
+    }
+    QUrl url(adress);
+    if (url.port() == -1 && url.scheme() == "http") {
+        url.setPort(8080);
+    }
+    return url.toString();
+}
+
+MainWindow* findMainWindow() {
+    // Iterate through all top-level widgets
+    for (QWidget *widget : qApp->topLevelWidgets()) {
+        // Try to cast the widget to MainWindow
+        MainWindow *mainWindow = qobject_cast<MainWindow*>(widget);
+        if (mainWindow) {
+            return mainWindow; // Return the first MainWindow found
         }
         reply->deleteLater();
     });

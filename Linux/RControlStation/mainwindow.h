@@ -21,6 +21,7 @@
 #include <QMainWindow>
 #include <QElapsedTimer>
 #include <QLabel>
+#include <QLineEdit>
 #include <QtWidgets>
 #include <QTableWidget>
 #include <QItemSelection>
@@ -398,6 +399,7 @@ private:
     ActionManager *actionManager;
 
     Ui::MainWindow *ui;
+    QLineEdit *mServerEdit = nullptr;
     bool mConnectingSelected = false; // Guard flag to prevent double connection
     QTimer *mTimer;
     QTimer *mHeartbeatTimer; // periodic heartbeat to vehicles for safety

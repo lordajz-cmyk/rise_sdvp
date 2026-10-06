@@ -14,6 +14,21 @@ BLUE='\e[34m'
 BOLD='\e[1m'
 NC='\e[0m' # No Color
 
+BOARD=legacy
+PROFILE=robant
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --board) [ "$#" -ge 2 ] || exit 1; BOARD="$2"; shift 2 ;;
+    --profile) [ "$#" -ge 2 ] || exit 1; PROFILE="$2"; shift 2 ;;
+    -h|--help)
+      echo "sudo bash install_allt.sh [--board legacy|mp101] [--profile robant|mactrac|drangen]"
+      exit 0 ;;
+    *) echo "Unknown argument: $1" >&2; exit 1 ;;
+  esac
+done
+case "$BOARD" in legacy|mp101) ;; *) echo "Unknown board: $BOARD" >&2; exit 1 ;; esac
+case "$PROFILE" in robant|mactrac|drangen) ;; *) echo "Unknown profile: $PROFILE" >&2; exit 1 ;; esac
+
 # Säkerställ att skriptet körs som root (sudo) eftersom install_pi.sh behöver det
 if [ "$EUID" -ne 0 ]; then
   echo -e "${RED}${BOLD}Fel:${NC} Detta skript måste köras med sudo! Kör: ${BOLD}sudo ./install_allt.sh${NC}"
@@ -33,14 +48,18 @@ elif [ -d "$DIR/rise_sdvp/Linux/Car_Client" ] && [ -d "$DIR/rise_sdvp/Embedded/R
   # Skriptet körs utanför repot (standard för rcontrollstation-mappen)
   REPO_ROOT="$DIR/rise_sdvp"
 else
+  if [ "$BOARD" = mp101 ] && ! command -v git >/dev/null; then
+    apt-get -y -o DPkg::Lock::Timeout=300 update &&
+      apt-get -y -o DPkg::Lock::Timeout=300 install git || exit 1
+  fi
   # Källkoden saknas – vi försöker klona den!
   echo -e "${YELLOW}Källkodsmappen 'rise_sdvp' saknas på: $DIR${NC}"
-  echo -e "Klónar källkoden från GitHub (https://github.com/lordajz-cmyk/rise_sdvp.git)..."
+  echo -e "Klónar källkoden från GitHub (https://github.com/maprosystemsab/rise_sdvp.git)..."
   
   if [ "$EUID" -eq 0 ]; then
-    sudo -u "$REAL_USER" git clone --recursive https://github.com/lordajz-cmyk/rise_sdvp.git "$DIR/rise_sdvp"
+    sudo -u "$REAL_USER" git clone --recursive https://github.com/maprosystemsab/rise_sdvp.git "$DIR/rise_sdvp"
   else
-    git clone --recursive https://github.com/lordajz-cmyk/rise_sdvp.git "$DIR/rise_sdvp"
+    git clone --recursive https://github.com/maprosystemsab/rise_sdvp.git "$DIR/rise_sdvp"
   fi
 
   if [ $? -eq 0 ] && [ -d "$DIR/rise_sdvp/Linux/Car_Client" ]; then
@@ -50,6 +69,42 @@ else
     echo -e "${RED}❌ Misslyckades med att hämta källkoden. Kontrollera din internetanslutning eller länk.${NC}"
     exit 1
   fi
+fi
+
+if [ "$BOARD" = mp101 ]; then
+  echo "Installing MP101 on the pre-flashed CM5 (Debian 13/Trixie), profile: $PROFILE"
+  bash "$REPO_ROOT/install_pi.sh" --board mp101 --defer-start
+  PI_RC=$?
+  if [ "$PI_RC" -eq 10 ]; then
+    echo "Boot settings changed. Run sudo reboot, then rerun this command. Flashing and WireGuard setup will follow."
+    exit 10
+  fi
+  [ "$PI_RC" -eq 0 ] || exit "$PI_RC"
+
+  sudo -u "$REAL_USER" bash "$REPO_ROOT/flash_styrkort_rovmcu.sh" --cm5 --profile "$PROFILE" || exit $?
+  if [ -f /etc/systemd/system/car_rtk.service ]; then
+    systemctl restart car_rtk.service || exit 1
+  fi
+  systemctl enable --now car_client.service || exit 1
+
+  if [ -s /etc/wireguard/wg0.conf ]; then
+    read -r -p "Keep existing WireGuard wg0 configuration? [Y/n] " KEEP_WG
+    if [[ "$KEEP_WG" =~ ^[Nn]$ ]]; then
+      bash "$REPO_ROOT/wireguard.sh" || exit $?
+    else
+      systemctl enable --now wg-quick@wg0.service || exit 1
+    fi
+  else
+    bash "$REPO_ROOT/wireguard.sh" || exit $?
+  fi
+  [ -s /etc/wireguard/wg0.conf ] || { echo "WireGuard configuration was not created." >&2; exit 1; }
+  # The existing WireGuard installer permits leaving the tunnel stopped.
+  if systemctl is-enabled --quiet wg-quick@wg0.service; then
+    systemctl is-active --quiet wg-quick@wg0.service || { echo "WireGuard failed to start." >&2; exit 1; }
+  fi
+
+  echo "CM5/MP101 installation completed. U10 GPS: /dev/ublox and /dev/rtk; MCU: /dev/vehicle."
+  exit 0
 fi
 
 echo -e "${BLUE}${BOLD}======================================================================${NC}"
