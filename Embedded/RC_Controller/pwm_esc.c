@@ -162,7 +162,8 @@ void pwm_esc_init(void) {
 			PAL_MODE_ALTERNATE(GPIO_AF_TIM9) |
 			PAL_STM32_OTYPE_PUSHPULL |
 			PAL_STM32_OSPEED_MID1);
-#ifndef IS_ROVMCU
+// PA3 är hjulpulsingång på MP101 och analog ingång för vinkelgivaren (adconv.c) med ANGLE_SENSOR_PA3.
+#if !defined(IS_ROVMCU) && !defined(ANGLE_SENSOR_PA3)
 	palSetPadMode(SERVO4_GPIO, SERVO4_PIN,
 			PAL_MODE_ALTERNATE(GPIO_AF_TIM9) |
 			PAL_STM32_OTYPE_PUSHPULL |
@@ -276,7 +277,11 @@ void tach_input_init(void) {
     capture_started = false;
 #else
     // Configure PA2 as TIM2_CH3 (AF1), unchanged on legacy boards.
+#ifdef WHEELSPEED_PULLUP
+    palSetPadMode(TACHO_INPUT_PORT, 2, PAL_MODE_ALTERNATE(1) | PAL_STM32_PUDR_PULLUP);
+#else
     palSetPadMode(TACHO_INPUT_PORT, 2, PAL_MODE_ALTERNATE(1));
+#endif
 
     // Timer configuration
     TIM2->PSC = 840 - 1;        // 84 MHz / 84 = 1 MHz → 1 µs per count

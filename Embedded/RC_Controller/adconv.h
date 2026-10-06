@@ -31,5 +31,7 @@ float adconv_get_vin(void);
 #ifdef IS_ROVMCU
 float adconv_get_5v(void);
 #endif
+void adconv_update_angle(void);
+bool adconv_angle_sensor_ok(void);
 
 #endif /* ADCONV_H_ */
