@@ -35,12 +35,12 @@ elif [ -d "$DIR/rise_sdvp/Linux/Car_Client" ] && [ -d "$DIR/rise_sdvp/Embedded/R
 else
   # Källkoden saknas – vi försöker klona den!
   echo -e "${YELLOW}Källkodsmappen 'rise_sdvp' saknas på: $DIR${NC}"
-  echo -e "Klónar källkoden från GitHub (https://github.com/lordajz-cmyk/rise_sdvp.git)..."
+  echo -e "Klónar källkoden från GitHub (https://github.com/maprosystemsab/rise_sdvp.git)..."
   
   if [ "$EUID" -eq 0 ]; then
-    sudo -u "$REAL_USER" git clone --recursive https://github.com/lordajz-cmyk/rise_sdvp.git "$DIR/rise_sdvp"
+    sudo -u "$REAL_USER" git clone --recursive https://github.com/maprosystemsab/rise_sdvp.git "$DIR/rise_sdvp"
   else
-    git clone --recursive https://github.com/lordajz-cmyk/rise_sdvp.git "$DIR/rise_sdvp"
+    git clone --recursive https://github.com/maprosystemsab/rise_sdvp.git "$DIR/rise_sdvp"
   fi
 
   if [ $? -eq 0 ] && [ -d "$DIR/rise_sdvp/Linux/Car_Client" ]; then
