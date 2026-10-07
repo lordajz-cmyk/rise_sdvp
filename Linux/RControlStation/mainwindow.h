@@ -367,6 +367,8 @@ private:
 
     Ui::MainWindow *ui;
     QLineEdit *mServerEdit = nullptr;
+    QString mVehicleMachine;        // maskinen vars batteriinställning gäller (adress)
+    void openVehicleSettings();
     bool mConnectingSelected = false; // Guard flag to prevent double connection
     QTimer *mTimer;
     QTimer *mHeartbeatTimer; // periodic heartbeat to vehicles for safety

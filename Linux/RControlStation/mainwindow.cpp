@@ -52,6 +52,14 @@
 #include <QUrlQuery>
 #include <QTimer>
 #include <QSettings>
+#include <QPushButton>
+#include <QDialogButtonBox>
+#include <QCheckBox>
+#include <QDoubleSpinBox>
+#include <QSpinBox>
+#include <QComboBox>
+#include <QFormLayout>
+#include <QDialog>
 
 // Mapros webbserver i WireGuard-tunneln, används när inget annat är inställt.
 static const char *STANDARD_SERVER = "192.168.200.1:8080";
@@ -367,6 +375,10 @@ MainWindow::MainWindow(QWidget *parent) :
         mStatusBoxLabel->setTextFormat(Qt::RichText);
         mStatusBoxLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
         statusLayout->addWidget(mStatusBoxLabel);
+        QPushButton *vehicleButton = new QPushButton("Batteri och fordon…", statusBox);
+        vehicleButton->setToolTip("Batterityp, celler, kapacitet och största styrvinkel för maskinen du är ansluten till");
+        connect(vehicleButton, &QPushButton::clicked, this, &MainWindow::openVehicleSettings);
+        statusLayout->addWidget(vehicleButton, 0, Qt::AlignLeft);
         int idx = ui->verticalLayout->indexOf(ui->verticalSpacer);
         ui->verticalLayout->insertWidget(idx < 0 ? 3 : idx, statusBox);
 
@@ -2395,6 +2407,11 @@ void MainWindow::updateStatusBox()
     QString vehicle;
     if (mVehicle) {
         bool connected = mTcpClientMulti->isAnyConnected();
+        const QString machine = mTcpClientMulti->connectedIp();
+        if (machine != mVehicleMachine) {
+            mVehicleMachine = machine;
+            mVehicle->setConfig(VehicleConfig::load(machine));
+        }
         mVehicle->tick(connected);
         if (connected && mStateAge.isValid() && mStateAge.elapsed() < 3000) {
             if (mVehicle->wantAngleQuery()) {
@@ -8251,6 +8268,94 @@ void selectRowByPrimaryKey(QTableView* tableView, QSqlRelationalTableModel* mode
             break;
         }
     }
+}
+
+void MainWindow::openVehicleSettings()
+{
+    const QString machine = mVehicleMachine;
+    VehicleConfig c = VehicleConfig::load(machine);
+
+    QDialog d(this);
+    d.setWindowTitle("Batteri och fordon");
+    QFormLayout *form = new QFormLayout(&d);
+    form->addRow(new QLabel(machine.isEmpty()
+            ? "Ingen maskin ansluten: ändrar <b>standard</b> för alla maskiner."
+            : QString("Maskin: <b>%1</b>").arg(machine.toHtmlEscaped())));
+
+    QComboBox *type = new QComboBox(&d);
+    type->addItem("LiFePO4 (cellernas vilospänning)", "lifepo4");
+    type->addItem("Linjärt mellan tom och full spänning", "linear");
+    type->setCurrentIndex(c.batteryType == "linear" ? 1 : 0);
+    QSpinBox *cells = new QSpinBox(&d);
+    cells->setRange(1, 64);
+    cells->setValue(c.seriesCells);
+    cells->setSuffix(" celler i serie");
+    QDoubleSpinBox *emptyV = new QDoubleSpinBox(&d);
+    emptyV->setRange(0.0, 200.0);
+    emptyV->setDecimals(1);
+    emptyV->setSuffix(" V");
+    emptyV->setValue(c.emptyV);
+    QDoubleSpinBox *fullV = new QDoubleSpinBox(&d);
+    fullV->setRange(0.0, 200.0);
+    fullV->setDecimals(1);
+    fullV->setSuffix(" V");
+    fullV->setValue(c.fullV);
+    QDoubleSpinBox *cap = new QDoubleSpinBox(&d);
+    cap->setRange(0.0, 100000.0);
+    cap->setDecimals(0);
+    cap->setSuffix(" Wh");
+    cap->setSpecialValueText("okänd (ingen räckvidd)");
+    cap->setValue(c.capacityWh);
+    QDoubleSpinBox *steer = new QDoubleSpinBox(&d);
+    steer->setRange(1.0, 90.0);
+    steer->setDecimals(1);
+    steer->setSuffix(" °");
+    steer->setValue(c.steeringMaxDeg);
+    QCheckBox *asDefault = new QCheckBox("Spara även som standard för maskiner utan egen inställning", &d);
+    asDefault->setChecked(machine.isEmpty());
+    asDefault->setEnabled(!machine.isEmpty());
+
+    form->addRow("Batterityp", type);
+    form->addRow("LiFePO4", cells);
+    form->addRow("Tom (0 %)", emptyV);
+    form->addRow("Full (100 %)", fullV);
+    form->addRow("Kapacitet", cap);
+    form->addRow("Största styrvinkel", steer);
+    form->addRow(asDefault);
+    form->addRow(new QLabel("<small>Exempel: 4 × 12,8 V 80 Ah LiFePO4 = 16 celler, 4096 Wh.<br>"
+                            "Kapaciteten = spänning × amperetimmar. Används för nedräkning och räckvidd.</small>"));
+    auto updateEnabled = [=]() {
+        const bool lifepo4 = type->currentData().toString() == "lifepo4";
+        cells->setEnabled(lifepo4);
+        emptyV->setEnabled(!lifepo4);
+        fullV->setEnabled(!lifepo4);
+    };
+    connect(type, QOverload<int>::of(&QComboBox::currentIndexChanged), &d, updateEnabled);
+    updateEnabled();
+
+    QDialogButtonBox *buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel, &d);
+    connect(buttons, &QDialogButtonBox::accepted, &d, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &d, &QDialog::reject);
+    form->addRow(buttons);
+
+    if (d.exec() != QDialog::Accepted) {
+        return;
+    }
+    if (type->currentData().toString() == "linear" && fullV->value() <= emptyV->value()) {
+        QMessageBox::warning(this, "Batteri och fordon", "Full spänning måste vara högre än tom.");
+        return;
+    }
+    c.batteryType = type->currentData().toString();
+    c.seriesCells = cells->value();
+    c.emptyV = emptyV->value();
+    c.fullV = fullV->value();
+    c.capacityWh = cap->value();
+    c.steeringMaxDeg = steer->value();
+    c.save(machine);
+    if (!machine.isEmpty() && asDefault->isChecked()) {
+        c.save(QString());
+    }
+    mVehicle->setConfig(c);
 }
 
 QString MainWindow::getServerBaseUrl() const
