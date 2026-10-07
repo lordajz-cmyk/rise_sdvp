@@ -80,10 +80,16 @@ static void(*forward_func)(unsigned char *data, unsigned int len) = 0; // Callba
 // Function pointers for received data
 // These callbacks are invoked when corresponding data is received from the motor controller
 static void(*rx_value_func)(mc_values *values) = 0;
-static void(*rx_setup_value_func)(mc_setup_values *values) = 0; // Callback for motor values (temperatures, currents, RPM)
+static void(*rx_setup_value_func)(mc_setup_values *values) = 0;
+static void(*rx_value_selective_func)(mc_values_selective *values) = 0;
+static void(*rx_stats_func)(mc_stats *stats) = 0;
+static void(*rx_psw_status_func)(psw_status_info *psw) = 0; // Callback for motor values (temperatures, currents, RPM)
 static void(*rx_printf_func)(char *str) = 0; // Callback for print/debug messages from controller
 static void(*rx_fw_func)(int major, int minor) = 0;
-static void(*rx_fw_info_func)(const fw_info *info) = 0; // Callback for firmware version info
+static void(*rx_fw_info_func)(const fw_info *info) = 0;
+static float m_batt_cut_start = 0.0;	// Last received battery cut start (V)
+static float m_batt_cut_end = 0.0;		// Last received battery cut end (V)
+static void(*rx_batt_cut_func)(float start, float end) = 0; // Callback for firmware version info
 static void(*rx_rotor_pos_func)(float pos) = 0; // Callback for rotor position updates
 static void(*rx_detect_func)(float cycle_int_limit, float coupling_k,
 		const signed char *hall_table, signed char hall_res) = 0; // Callback for motor detection results
@@ -366,6 +372,93 @@ void bldc_interface_process_packet(unsigned char *data, unsigned int len) {
 
 		// Print message from controller (COMM_PRINT)
 		// Data format: Null-terminated string
+	case COMM_GET_VALUES_SELECTIVE: {
+		ind = 0;
+		uint32_t mask = buffer_get_uint32(data, &ind);
+		mc_values_selective v;
+
+		if (mask & ((uint32_t)1 << 0))  v.temp_fet           = buffer_get_float16(data, 1e1, &ind);
+		if (mask & ((uint32_t)1 << 1))  v.temp_motor         = buffer_get_float16(data, 1e1, &ind);
+		if (mask & ((uint32_t)1 << 2))  v.avg_current_motor  = buffer_get_float32(data, 1e2, &ind);
+		if (mask & ((uint32_t)1 << 3))  v.avg_current_in     = buffer_get_float32(data, 1e2, &ind);
+		if (mask & ((uint32_t)1 << 4))  v.avg_id             = buffer_get_float32(data, 1e2, &ind);
+		if (mask & ((uint32_t)1 << 5))  v.avg_iq             = buffer_get_float32(data, 1e2, &ind);
+		if (mask & ((uint32_t)1 << 6))  v.duty_now           = buffer_get_float16(data, 1e3, &ind);
+		if (mask & ((uint32_t)1 << 7))  v.rpm                = buffer_get_float32(data, 1e0, &ind);
+		if (mask & ((uint32_t)1 << 8))  v.v_in               = buffer_get_float16(data, 1e1, &ind);
+		if (mask & ((uint32_t)1 << 9))  v.amp_hours          = buffer_get_float32(data, 1e4, &ind);
+		if (mask & ((uint32_t)1 << 10)) v.amp_hours_charged  = buffer_get_float32(data, 1e4, &ind);
+		if (mask & ((uint32_t)1 << 11)) v.watt_hours         = buffer_get_float32(data, 1e4, &ind);
+		if (mask & ((uint32_t)1 << 12)) v.watt_hours_charged = buffer_get_float32(data, 1e4, &ind);
+		if (mask & ((uint32_t)1 << 13)) v.tachometer         = buffer_get_int32(data, &ind);
+		if (mask & ((uint32_t)1 << 14)) v.tachometer_abs     = buffer_get_int32(data, &ind);
+		if (mask & ((uint32_t)1 << 15)) v.fault_code         = data[ind++];
+		if (mask & ((uint32_t)1 << 16)) v.vesc_id            = data[ind++];
+		if (mask & ((uint32_t)1 << 17)) v.num_vescs          = data[ind++];
+		if (mask & ((uint32_t)1 << 18)) v.temp_mos_1         = buffer_get_float16(data, 1e1, &ind);
+		if (mask & ((uint32_t)1 << 19)) v.temp_mos_2         = buffer_get_float16(data, 1e1, &ind);
+		if (mask & ((uint32_t)1 << 20)) v.temp_mos_3         = buffer_get_float16(data, 1e1, &ind);
+		// Bits above 20 (vd, vq etc.) exist in newer firmware - parse
+		// them here after verifying against the actual firmware version.
+
+		if (rx_value_selective_func) {
+			rx_value_selective_func(&v);
+		}
+	} break;
+
+	case COMM_GET_BATTERY_CUT_NEW: {
+		// Reply (verified): l_battery_cut_start f32 1e3, l_battery_cut_end f32 1e3
+		ind = 0;
+		m_batt_cut_start = buffer_get_float32(data, 1e3, &ind);
+		m_batt_cut_end = buffer_get_float32(data, 1e3, &ind);
+		if (rx_batt_cut_func) {
+			rx_batt_cut_func(m_batt_cut_start, m_batt_cut_end);
+		}
+	} break;
+
+	case COMM_GET_STATS_NEW: {
+		// Reply (verified): echo mask u32, then float32_auto fields.
+		ind = 0;
+		uint32_t mask = buffer_get_uint32(data, &ind);
+		mc_stats st;
+
+		if (mask & ((uint32_t)1 << 0)) st.speed_avg      = buffer_get_float32_auto(data, &ind);
+		if (mask & ((uint32_t)1 << 1)) st.speed_max      = buffer_get_float32_auto(data, &ind);
+		if (mask & ((uint32_t)1 << 2)) st.power_avg      = buffer_get_float32_auto(data, &ind);
+		if (mask & ((uint32_t)1 << 3)) st.power_max      = buffer_get_float32_auto(data, &ind);
+		if (mask & ((uint32_t)1 << 4)) st.current_avg    = buffer_get_float32_auto(data, &ind);
+		if (mask & ((uint32_t)1 << 5)) st.current_max   = buffer_get_float32_auto(data, &ind);
+		if (mask & ((uint32_t)1 << 6)) st.temp_mosfet_avg = buffer_get_float32_auto(data, &ind);
+		if (mask & ((uint32_t)1 << 7)) st.temp_mosfet_max = buffer_get_float32_auto(data, &ind);
+		// Bits above 7 exist in newer firmware (temp_motor, uptime, fault
+		// counters...) - add after verifying against the actual firmware.
+
+		if (rx_stats_func) {
+			rx_stats_func(&st);
+		}
+	} break;
+
+	case COMM_PSW_GET_STATUS_NEW: {
+		// Reply (verified): id int16, psws_num int16, age f32auto,
+		// v_in f32auto, v_out f32auto, temp f32auto,
+		// is_out_on u8, is_pch_on u8, is_dsc_on u8.
+		// NOTE: no reply is sent if the requested PSW was not found.
+		ind = 0;
+		psw_status_info psw;
+		psw.id       = buffer_get_int16(data, &ind);
+		psw.psws_num = buffer_get_int16(data, &ind);
+		psw.age_s    = buffer_get_float32_auto(data, &ind);
+		psw.v_in     = buffer_get_float32_auto(data, &ind);
+		psw.v_out    = buffer_get_float32_auto(data, &ind);
+		psw.temp     = buffer_get_float32_auto(data, &ind);
+		psw.is_out_on = data[ind++];
+		psw.is_pch_on = data[ind++];
+		psw.is_dsc_on = data[ind++];
+		if (rx_psw_status_func) {
+			rx_psw_status_func(&psw);
+		}
+	} break;
+
 	case COMM_PRINT:
 		if (rx_printf_func) {
 			data[len] = '\0'; // Null-terminate the string
@@ -543,6 +636,16 @@ void bldc_interface_set_rx_value_func(void(*func)(mc_values *values)) {
 // Set callback for setup values (battery level, Wh left, etc.)
 void bldc_interface_set_rx_setup_value_func(void(*func)(mc_setup_values *values)) {
 	rx_setup_value_func = func;
+}
+
+// Set callback for statistics
+void bldc_interface_set_rx_stats_func(void(*func)(mc_stats *stats)) {
+	rx_stats_func = func;
+}
+
+// Set callback for power switch status
+void bldc_interface_set_rx_psw_status_func(void(*func)(psw_status_info *psw)) {
+	rx_psw_status_func = func;
 }
 
 // Set callback for print/debug messages from controller
@@ -821,6 +924,14 @@ void bldc_interface_get_setup_values_selective(uint32_t mask) {
 	send_packet_no_fwd(send_buffer, send_index);
 }
 
+// Request a subset of the real-time values using a bitmask
+void bldc_interface_get_values_selective(uint32_t mask) {
+	int32_t send_index = 0;
+	send_buffer[send_index++] = COMM_GET_VALUES_SELECTIVE;
+	buffer_append_uint32(send_buffer, mask, &send_index);
+	send_packet_no_fwd(send_buffer, send_index);
+}
+
 // Request motor configuration from the controller
 void bldc_interface_get_mcconf(void) {
 	int32_t send_index = 0;
@@ -919,6 +1030,141 @@ const char* bldc_interface_fault_to_string(mc_fault_code fault) {
 	case FAULT_CODE_OVER_TEMP_MOTOR: return "FAULT_CODE_OVER_TEMP_MOTOR"; // Motor over-temperature
 	default: return "Unknown fault"; // Unknown fault code
 	}
+}
+
+// Emergency stop the motor on the receiving controller immediately.
+// Firmware replies with an empty ACK packet of the same ID.
+void bldc_interface_motor_estop(void) {
+	int32_t send_index = 0;
+	send_buffer[send_index++] = COMM_MOTOR_ESTOP_NEW;
+	send_packet_no_fwd(send_buffer, send_index);
+}
+
+// Controlled shutdown; force=1 shuts down even above 100 rpm.
+void bldc_interface_shutdown(uint8_t force) {
+	int32_t send_index = 0;
+	send_buffer[send_index++] = COMM_SHUTDOWN_NEW;
+	send_buffer[send_index++] = force;
+	send_packet_no_fwd(send_buffer, send_index);
+}
+
+// disable != 0 disables the motor output until re-enabled or reboot.
+void bldc_interface_app_disable_output(uint8_t disable) {
+	int32_t send_index = 0;
+	send_buffer[send_index++] = COMM_APP_DISABLE_OUTPUT_NEW;
+	send_buffer[send_index++] = disable;
+	send_packet_no_fwd(send_buffer, send_index);
+}
+
+// Power switch relay: id selects the PSW (CAN id), is_on = 0/1.
+// plot requests a status plot reply in newer firmware (usually 0).
+void bldc_interface_psw_switch(int16_t id, uint8_t is_on, uint8_t plot) {
+	int32_t send_index = 0;
+	send_buffer[send_index++] = COMM_PSW_SWITCH_NEW;
+	buffer_append_int16(send_buffer, id, &send_index);
+	send_buffer[send_index++] = is_on;
+	send_buffer[send_index++] = plot;
+	send_packet_no_fwd(send_buffer, send_index);
+}
+
+// Set soft battery cut limits (V). Request format (verified):
+// start f32 1e3, end f32 1e3, store u8, fwd_can u8.
+// store != 0 saves to flash. Firmware replies with an empty ACK.
+void bldc_interface_set_battery_cut(float start, float end,
+		uint8_t store, uint8_t fwd_can) {
+	int32_t send_index = 0;
+	send_buffer[send_index++] = COMM_SET_BATTERY_CUT_NEW;
+	buffer_append_float32(send_buffer, start, 1e3, &send_index);
+	buffer_append_float32(send_buffer, end, 1e3, &send_index);
+	send_buffer[send_index++] = store;
+	send_buffer[send_index++] = fwd_can;
+	send_packet_no_fwd(send_buffer, send_index);
+}
+
+// Request the current battery cut limits; reply goes to rx_batt_cut_func.
+void bldc_interface_get_battery_cut(void) {
+	int32_t send_index = 0;
+	send_buffer[send_index++] = COMM_GET_BATTERY_CUT_NEW;
+	send_packet_no_fwd(send_buffer, send_index);
+}
+
+// Latest received battery cut limits (0.0 until first reply).
+void bldc_interface_get_battery_cut_cached(float *start, float *end) {
+	*start = m_batt_cut_start;
+	*end = m_batt_cut_end;
+}
+
+// Request statistics using a u16 bitmask; reply goes to rx_stats_func.
+void bldc_interface_get_stats(uint16_t mask) {
+	int32_t send_index = 0;
+	send_buffer[send_index++] = COMM_GET_STATS_NEW;
+	buffer_append_uint16(send_buffer, mask, &send_index);
+	send_packet_no_fwd(send_buffer, send_index);
+}
+
+// Reset the statistics counters on the controller.
+void bldc_interface_reset_stats(void) {
+	int32_t send_index = 0;
+	send_buffer[send_index++] = COMM_RESET_STATS_NEW;
+	send_packet_no_fwd(send_buffer, send_index);
+}
+
+// Request power switch status. by_id=1 selects by CAN id,
+// otherwise id is an index. Request format (verified):
+// by_id u8, id_ind int16.
+void bldc_interface_get_psw_status(uint8_t by_id, int16_t id) {
+	int32_t send_index = 0;
+	send_buffer[send_index++] = COMM_PSW_GET_STATUS_NEW;
+	send_buffer[send_index++] = by_id;
+	buffer_append_int16(send_buffer, id, &send_index);
+	send_packet_no_fwd(send_buffer, send_index);
+}
+
+// Request IMU data (packet 65). Request format (verified): mask u16
+// (roll, pitch, yaw, acc*3, gyro*3...). The reply format is
+// firmware-version dependent - write the parser only after verifying
+// against the actual firmware running on the controllers.
+void bldc_interface_get_imu_data(uint16_t mask) {
+	int32_t send_index = 0;
+	send_buffer[send_index++] = COMM_GET_IMU_DATA_NEW;
+	buffer_append_uint16(send_buffer, mask, &send_index);
+	send_packet_no_fwd(send_buffer, send_index);
+}
+
+// Request GNSS data (packet 150). Request format (verified): mask u16
+// (lat, lon, alt, speed, hdop...). Reply format is firmware-version
+// dependent - verify before writing the parser.
+void bldc_interface_get_gnss(uint16_t mask) {
+	int32_t send_index = 0;
+	send_buffer[send_index++] = COMM_GET_GNSS_NEW;
+	buffer_append_uint16(send_buffer, mask, &send_index);
+	send_packet_no_fwd(send_buffer, send_index);
+}
+
+// Request BMS values (packet 96). No arguments. The reply contains the
+// full bms_val struct (v_tot, v_charge, i_in, ah_cnt, wh_cnt, cell
+// voltages, temperatures, soc, soh, charge_allowed...) - layout is
+// firmware-version dependent; verify before writing the parser.
+void bldc_interface_bms_get_values(void) {
+	int32_t send_index = 0;
+	send_buffer[send_index++] = COMM_BMS_GET_VALUES_NEW;
+	send_packet_no_fwd(send_buffer, send_index);
+}
+
+// Firmware-side logging (packets 145/146). LOG_START begins streaming
+// log frames (LOG_DATA_F32/F64) to this client; LOG_STOP ends it.
+// The frame format differs between 5.x and 6.x - do not subscribe
+// until the format has been verified against the actual firmware.
+void bldc_interface_log_start(void) {
+	int32_t send_index = 0;
+	send_buffer[send_index++] = COMM_LOG_START_NEW;
+	send_packet_no_fwd(send_buffer, send_index);
+}
+
+void bldc_interface_log_stop(void) {
+	int32_t send_index = 0;
+	send_buffer[send_index++] = COMM_LOG_STOP_NEW;
+	send_packet_no_fwd(send_buffer, send_index);
 }
 
 // Private functions
