@@ -20,6 +20,7 @@
 
 #include <QMainWindow>
 #include <QElapsedTimer>
+#include <QPushButton>
 #include <QLabel>
 #include <QLineEdit>
 #include <QtWidgets>
@@ -368,6 +369,12 @@ private:
     Ui::MainWindow *ui;
     QLineEdit *mServerEdit = nullptr;
     QString mVehicleMachine;        // maskinen vars batteriinställning gäller (adress)
+    // Dosan: av vid start, slås på med knappen "Aktivera dosa" (se activateGamepad).
+    QPushButton *mGamepadButton = nullptr;
+    QElapsedTimer mGamepadActivity;  // senaste spak-/knapprörelse medan dosan är aktiv
+    void activateGamepad();
+    void lockGamepad(const QString &why);
+    void updateGamepadButton();
     void openVehicleSettings();
     bool mConnectingSelected = false; // Guard flag to prevent double connection
     QTimer *mTimer;

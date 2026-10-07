@@ -177,9 +177,9 @@ MainWindow::MainWindow(QWidget *parent) :
         mServerEdit->setPlaceholderText(QString(STANDARD_SERVER) + " (Mapro)");
         mServerEdit->setToolTip("Webbserverns adress för gårdar, fält, banor och maskiner, "
                                 "t.ex. 192.168.200.1:8080. Tomt = Mapros server. Port 8080 om ingen anges.");
-        const int rad = ui->gridLayout_3->rowCount();
-        ui->gridLayout_3->addWidget(new QLabel("Server", this), rad, 0);
-        ui->gridLayout_3->addWidget(mServerEdit, rad, 2);
+        const int rad = ui->gridLayout_31->rowCount();
+        ui->gridLayout_31->addWidget(new QLabel("Server", this), rad, 0);
+        ui->gridLayout_31->addWidget(mServerEdit, rad, 2);
         connect(mServerEdit, &QLineEdit::editingFinished, this, [this]() {
             QSettings("RControlStation", "server").setValue("adress", mServerEdit->text().trimmed());
         });
@@ -343,7 +343,7 @@ MainWindow::MainWindow(QWidget *parent) :
     ui->statusBar->addPermanentWidget(mStatusLabel);
     mStatusInfoTime = 0;
     mActiveCarId = 0;
-    mJoystickControlEnabled = true;
+    mJoystickControlEnabled = false; // dosan aktiveras med knappen "Aktivera dosa"
     mPacketInterface = new PacketInterface(this);
     mSerialPort = new QSerialPort(this);
     mNetworkManager = new QNetworkAccessManager(this);
@@ -689,9 +689,56 @@ MainWindow::MainWindow(QWidget *parent) :
     qApp->installEventFilter(this);
     
     // Connect checkBoxActiveKB to joystick control
+    ui->checkBoxActiveKB->setChecked(false);
     connect(ui->checkBoxActiveKB, &QCheckBox::stateChanged, this, [this](int state) {
         setJoystickControlEnabled(state == Qt::Checked);
+        updateGamepadButton();
     });
+
+    // Joystick och Control bredvid varandra, med knappen "Aktivera dosa" ovanför.
+    {
+        QGroupBox *jsBox = qobject_cast<QGroupBox*>(ui->jsConnectButton->parentWidget());
+        QGroupBox *ctrlBox = ui->groupBox_3;
+        QBoxLayout *parentLayout = ui->verticalLayout;   // vänstra spalten
+        if (jsBox && parentLayout && parentLayout->indexOf(jsBox) >= 0 && parentLayout->indexOf(ctrlBox) >= 0) {
+            const int idx = parentLayout->indexOf(jsBox);
+            parentLayout->removeWidget(jsBox);
+            parentLayout->removeWidget(ctrlBox);
+
+            // Joystick-rutan: knapparna under varandra.
+            if (QGridLayout *g = qobject_cast<QGridLayout*>(jsBox->layout())) {
+                g->removeWidget(ui->jsConnectButton);
+                g->removeWidget(ui->jsDisconnectButton);
+                g->removeWidget(ui->jsConnectedLabel);
+                g->addWidget(ui->jsConnectButton, 0, 0);
+                g->addWidget(ui->jsDisconnectButton, 1, 0);
+                g->addWidget(ui->jsConnectedLabel, 2, 0);
+                g->setRowStretch(3, 1);
+            }
+
+            QWidget *box = new QWidget(this);
+            QVBoxLayout *v = new QVBoxLayout(box);
+            v->setContentsMargins(0, 0, 0, 0);
+            mGamepadButton = new QPushButton(box);
+            mGamepadButton->setMinimumHeight(36);
+            connect(mGamepadButton, &QPushButton::clicked, this, [this]() {
+                if (mJoystickControlEnabled) {
+                    lockGamepad("Dosan låst");
+                } else {
+                    activateGamepad();
+                }
+            });
+            v->addWidget(mGamepadButton);
+            QHBoxLayout *h = new QHBoxLayout();
+            h->addWidget(jsBox, 0, Qt::AlignTop);
+            h->addWidget(ctrlBox, 1, Qt::AlignTop);
+            v->addLayout(h);
+            parentLayout->insertWidget(idx, box);
+        } else {
+            qWarning() << "Hittade inte Joystick- och Control-rutorna; knappen Aktivera dosa saknas.";
+        }
+        updateGamepadButton();
+    }
 
     // Populate controller combo boxes from database
     populateControllerComboBoxes();
@@ -1421,6 +1468,9 @@ void MainWindow::handleControllerInput(int controllerNumber, float value)
     if (qAbs(value) < 0.02f) {
         value = 0.0f;
     }
+    if (value != 0.0f && mJoystickControlEnabled) {
+        mGamepadActivity.restart();
+    }
 
     // Jitterfilter: skicka inte små ändringar, men en övergång till 0 skickas alltid.
     // Ett stillastående reglage skickas om av rcResendTick() så att VESC:ernas
@@ -2100,7 +2150,13 @@ void MainWindow::checkJoystickConnection()
 #ifdef HAS_JOYSTICK
     #if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
     int numJoysticks = SDL_NumJoysticks();
-    
+
+    // Dosan urkopplad och inkopplad mellan två kontroller: antalet är detsamma men
+    // den gamla handtaget är dött. Öppna igen.
+    if (numJoysticks > 0 && !gamepadAttached()) {
+        mLastJoystickCount = -1;
+    }
+
     // Check if joystick count changed
     if (numJoysticks != mLastJoystickCount) {
         mLastJoystickCount = numJoysticks;
@@ -2315,6 +2371,21 @@ void MainWindow::timerSlot()
         ui->mapLiveWidget->setDrawRouteText(false);
     }
     ui->mapLiveWidget->setSelectedCar(ui->mapCarBox->value());
+
+    // Dosan låses av sig själv: anslutningen bruten, dosan urkopplad, 5 min utan spakrörelse.
+    if (mJoystickControlEnabled) {
+        if (!mTcpClientMulti->isAnyConnected()) {
+            lockGamepad("Dosan låst: anslutningen till roboten bröts");
+        }
+#ifdef HAS_JOYSTICK
+        else if (!JSconnected()) {
+            lockGamepad("Dosan låst: dosan kopplades ur");
+        }
+#endif
+        else if (mGamepadActivity.isValid() && mGamepadActivity.elapsed() > 5 * 60 * 1000) {
+            lockGamepad("Dosan låst: ingen spakrörelse på 5 minuter");
+        }
+    }
 
     // Joystick connected
 #ifdef HAS_JOYSTICK
@@ -8091,6 +8162,19 @@ void MainWindow::pollGamepad() {
     }
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
+        if (event.type == SDL_CONTROLLERDEVICEADDED && !gamepadAttached()) {
+            // Dosan inkopplad igen (eller en ny): öppna den direkt, ingen omstart behövs.
+            if (connectJoystick()) {
+                ui->statusBar->showMessage("Dosan ansluten", 3000);
+            }
+            continue;
+        }
+        if (event.type == SDL_CONTROLLERDEVICEREMOVED && mController != nullptr &&
+            SDL_GameControllerGetAttached(mController) != SDL_TRUE) {
+            SDL_GameControllerClose(mController);
+            mController = nullptr;
+            continue;
+        }
 //        qDebug() << "button type: " << event.type;
         if (event.type == SDL_CONTROLLERBUTTONDOWN || event.type == SDL_CONTROLLERBUTTONUP) {
             qDebug() << "up or down";
@@ -8268,6 +8352,75 @@ void selectRowByPrimaryKey(QTableView* tableView, QSqlRelationalTableModel* mode
             break;
         }
     }
+}
+
+void MainWindow::updateGamepadButton()
+{
+    if (!mGamepadButton) {
+        return;
+    }
+    if (mJoystickControlEnabled) {
+        mGamepadButton->setText("🔒 Lås dosa");
+        mGamepadButton->setStyleSheet("QPushButton { background: #c62828; color: white; font-weight: bold; }");
+        mGamepadButton->setToolTip("Dosan kör roboten. Klicka för att låsa.");
+    } else {
+        mGamepadButton->setText("🎮 Aktivera dosa");
+        mGamepadButton->setStyleSheet("QPushButton { background: #2e7d32; color: white; font-weight: bold; }");
+        mGamepadButton->setToolTip("Dosan är låst. Klicka för att köra med dosan (kryssar i Active och Keyboard control).");
+    }
+}
+
+void MainWindow::activateGamepad()
+{
+    QString hinder;
+    if (!mTcpClientMulti->isAnyConnected()) {
+        hinder = "Anslut till roboten först.";
+    }
+#ifdef HAS_JOYSTICK
+    else if (!JSconnected()) {
+        hinder = "Ingen dosa ansluten.";
+    }
+#endif
+    else {
+        for (int c: {5, 6, 7, 8}) {     // spakarna (vänster/höger, x/y)
+            if (qAbs(mCachedControllerValues.value(c, 0.0f)) > 0.1f) {
+                hinder = "Släpp spakarna till mitten först.";
+                break;
+            }
+        }
+    }
+    if (!hinder.isEmpty()) {
+        ui->statusBar->showMessage("Dosan aktiveras inte: " + hinder, 5000);
+        QMessageBox::information(this, "Aktivera dosa", hinder);
+        return;
+    }
+
+    ui->checkBoxActiveKB->setChecked(true);     // setJoystickControlEnabled + knappen
+    for (CarInterface *car: mCars) {
+        if (car->getId() == mActiveCarId) {
+            car->setCtrlKb();                   // Keyboard control i, autopiloten av
+        }
+    }
+    mGamepadActivity.restart();
+    ui->statusBar->showMessage("Dosan aktiverad – roboten kan köras med dosan", 5000);
+}
+
+void MainWindow::lockGamepad(const QString &why)
+{
+    if (!mJoystickControlEnabled) {
+        return;
+    }
+    // Fart och styrning till 0 innan dosan stängs av, så att inget ligger kvar.
+    for (int c: mCachedControllerValues.keys()) {
+        handleControllerInput(c, 0.0f);
+    }
+    ui->checkBoxActiveKB->setChecked(false);    // setJoystickControlEnabled(false) + knappen
+    for (CarInterface *car: mCars) {
+        if (car->getId() == mActiveCarId) {
+            car->setCtrlKbOff();
+        }
+    }
+    ui->statusBar->showMessage(why, 8000);
 }
 
 void MainWindow::openVehicleSettings()
