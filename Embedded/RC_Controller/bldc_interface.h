@@ -19,6 +19,7 @@
 #define BLDC_INTERFACE_H_
 
 #include "datatypes.h"
+#include "bldc_interface_fwver.h"
 
 // interface functions
 void bldc_interface_init(void(*func)(unsigned char *data, unsigned int len));
@@ -28,8 +29,10 @@ void bldc_interface_process_packet(unsigned char *data, unsigned int len);
 
 // Function pointer setters
 void bldc_interface_set_rx_value_func(void(*func)(mc_values *values));
+void bldc_interface_set_rx_setup_value_func(void(*func)(mc_setup_values *values));
 void bldc_interface_set_rx_printf_func(void(*func)(char *str));
 void bldc_interface_set_rx_fw_func(void(*func)(int major, int minor));
+void bldc_interface_set_rx_fw_info_func(void(*func)(const fw_info *info));
 void bldc_interface_set_rx_rotor_pos_func(void(*func)(float pos));
 void bldc_interface_set_rx_detect_func(void(*func)(float cycle_int_limit, float coupling_k,
 		const signed char *hall_table, signed char hall_res));
@@ -55,6 +58,8 @@ void bldc_interface_set_servo_pos(float pos);
 // Getters
 void bldc_interface_get_fw_version(void);
 void bldc_interface_get_values(void);
+void bldc_interface_get_setup_values(void);
+void bldc_interface_get_setup_values_selective(uint32_t mask);
 void bldc_interface_get_mcconf(void);
 void bldc_interface_get_appconf(void);
 void bldc_interface_get_decoded_ppm(void);

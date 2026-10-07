@@ -43,6 +43,7 @@
 
 #include "bldc_interface.h"
 #include "buffer.h"
+#include "bldc_interface_fwver.h"
 #include "commands.h"
 #include <string.h>
 
@@ -50,7 +51,9 @@
 static unsigned char send_buffer[1024]; // Transmit buffer for packet serialization (1024 bytes max)
 
 // Private variables for received data
-static mc_values values; // Last received motor controller values (temperatures, currents, RPM, etc.)
+static mc_values values;
+static mc_setup_values setup_values; // Last received motor controller values (temperatures, currents, RPM, etc.)
+static fw_info fwinfo;
 static int fw_major; // Firmware major version number
 static int fw_minor; // Firmware minor version number
 static float rotor_pos; // Current rotor position (radians or degrees, depending on firmware)
@@ -76,9 +79,11 @@ static void(*forward_func)(unsigned char *data, unsigned int len) = 0; // Callba
 
 // Function pointers for received data
 // These callbacks are invoked when corresponding data is received from the motor controller
-static void(*rx_value_func)(mc_values *values) = 0; // Callback for motor values (temperatures, currents, RPM)
+static void(*rx_value_func)(mc_values *values) = 0;
+static void(*rx_setup_value_func)(mc_setup_values *values) = 0; // Callback for motor values (temperatures, currents, RPM)
 static void(*rx_printf_func)(char *str) = 0; // Callback for print/debug messages from controller
-static void(*rx_fw_func)(int major, int minor) = 0; // Callback for firmware version info
+static void(*rx_fw_func)(int major, int minor) = 0;
+static void(*rx_fw_info_func)(const fw_info *info) = 0; // Callback for firmware version info
 static void(*rx_rotor_pos_func)(float pos) = 0; // Callback for rotor position updates
 static void(*rx_detect_func)(float cycle_int_limit, float coupling_k,
 		const signed char *hall_table, signed char hall_res) = 0; // Callback for motor detection results
@@ -162,15 +167,75 @@ void bldc_interface_process_packet(unsigned char *data, unsigned int len) {
 		// Firmware version response (COMM_FW_VERSION = 0)
 		// Data format: [major_version (1 byte), minor_version (1 byte)]
 	case COMM_FW_VERSION:
+		ind = 0;
+		fwinfo.fw_major = -1;
+		fwinfo.fw_minor = -1;
+		fwinfo.fw_is_legacy = true;
+		memset(fwinfo.hw_name, 0, sizeof(fwinfo.hw_name));
+		memset(fwinfo.uuid, 0, sizeof(fwinfo.uuid));
+		memset(fwinfo.fw_name, 0, sizeof(fwinfo.fw_name));
+		fwinfo.hw_crc = 0;
+
+		// Legacy format: only major.minor (firmware pre ~4.x)
 		if (len == 2) {
-			ind = 0;
-			fw_major = data[ind++]; // Extract major version
-			fw_minor = data[ind++]; // Extract minor version
-			// Note: Callback is invoked elsewhere when firmware version is requested
+			fw_major = data[ind++];
+			fw_minor = data[ind++];
+			fwinfo.fw_major = fw_major;
+			fwinfo.fw_minor = fw_minor;
 		} else {
-			// Invalid length, set to error values
-			fw_major = -1;
-			fw_minor = -1;
+			// Modern format: major, minor, hw_name(nullstr), uuid(12),
+			// pairing_done, test_ver, hw_type, custom_cfg_num,
+			// phase_filters, qmlui*3, nrf_flags, fw_name(nullstr), hw_crc
+			fwinfo.fw_major = data[ind++];
+			fwinfo.fw_minor = data[ind++];
+
+			const char *s = (const char*)(data + ind);
+			const char *e = memchr(s, '\0', (size_t)(len - ind));
+			if (e == 0) {
+				// Broken packet: mark unknown and stop
+				fwinfo.fw_major = -1;
+				fwinfo.fw_minor = -1;
+				fw_major = -1;
+				fw_minor = -1;
+				break;
+			}
+			strncpy(fwinfo.hw_name, s, sizeof(fwinfo.hw_name) - 1);
+			ind += (int)(e - s) + 1;
+
+			if ((size_t)ind + 12 + 9 <= (size_t)len) {
+				memcpy(fwinfo.uuid, data + ind, 12);
+				ind += 12;
+				fwinfo.pairing_done        = data[ind++] != 0;
+				fwinfo.test_version_number = data[ind++];
+				fwinfo.hw_type             = data[ind++];
+				fwinfo.custom_cfg_num      = data[ind++];
+				fwinfo.phase_filters       = data[ind++];
+				fwinfo.qmlui_hw_flags      = data[ind++];
+				fwinfo.qmlui_app_flags     = data[ind++];
+				fwinfo.qmlui_flags         = data[ind++];
+				fwinfo.nrf_flags           = data[ind++];
+				fwinfo.fw_is_legacy        = false;
+			}
+
+			const char *s2 = (const char*)(data + ind);
+			const char *e2 = memchr(s2, '\0', (size_t)(len - ind));
+			if (e2 != 0 && (size_t)(e2 - s2) < sizeof(fwinfo.fw_name)) {
+				strncpy(fwinfo.fw_name, s2, sizeof(fwinfo.fw_name) - 1);
+				ind += (int)(e2 - s2) + 1;
+				if ((size_t)ind + 4 <= (size_t)len) {
+					fwinfo.hw_crc = buffer_get_uint32(data, &ind);
+				}
+			}
+
+			fw_major = fwinfo.fw_major;
+			fw_minor = fwinfo.fw_minor;
+		}
+
+		if (rx_fw_func) {
+			rx_fw_func(fw_major, fw_minor);		// backwards compatible
+		}
+		if (rx_fw_info_func) {
+			rx_fw_info_func(&fwinfo);			// full info
 		}
 		break;
 
@@ -220,6 +285,84 @@ void bldc_interface_process_packet(unsigned char *data, unsigned int len) {
 			rx_value_func(&values); // Pass parsed values to callback
 		}
 		break;
+
+		// Setup values response (COMM_GET_VALUES_SETUP / _SELECTIVE)
+		// Reply format (fw 3.48+): see comm/commands.c in vedderb/bldc.
+		// SELECTIVE echoes the 32-bit request mask first.
+	case COMM_GET_VALUES_SETUP:
+	case COMM_GET_VALUES_SETUP_SELECTIVE: {
+		ind = 0;
+
+		uint32_t mask = 0xFFFFFFFF;
+		if (id == COMM_GET_VALUES_SETUP_SELECTIVE) {
+			mask = buffer_get_uint32(data, &ind);
+		}
+
+		if (mask & ((uint32_t)1 << 0)) {
+			setup_values.temp_mos = buffer_get_float16(data, 1e1, &ind);
+		}
+		if (mask & ((uint32_t)1 << 1)) {
+			setup_values.temp_motor = buffer_get_float16(data, 1e1, &ind);
+		}
+		if (mask & ((uint32_t)1 << 2)) {
+			setup_values.current_tot = buffer_get_float32(data, 1e2, &ind);
+		}
+		if (mask & ((uint32_t)1 << 3)) {
+			setup_values.current_in_tot = buffer_get_float32(data, 1e2, &ind);
+		}
+		if (mask & ((uint32_t)1 << 4)) {
+			setup_values.duty_now = buffer_get_float16(data, 1e3, &ind);
+		}
+		if (mask & ((uint32_t)1 << 5)) {
+			setup_values.rpm = buffer_get_float32(data, 1e0, &ind);
+		}
+		if (mask & ((uint32_t)1 << 6)) {
+			setup_values.speed = buffer_get_float32(data, 1e3, &ind);
+		}
+		if (mask & ((uint32_t)1 << 7)) {
+			setup_values.v_in = buffer_get_float16(data, 1e1, &ind);
+		}
+		if (mask & ((uint32_t)1 << 8)) {
+			setup_values.battery_level = buffer_get_float16(data, 1e3, &ind);
+		}
+		if (mask & ((uint32_t)1 << 9)) {
+			setup_values.ah_tot = buffer_get_float32(data, 1e4, &ind);
+		}
+		if (mask & ((uint32_t)1 << 10)) {
+			setup_values.ah_charge_tot = buffer_get_float32(data, 1e4, &ind);
+		}
+		if (mask & ((uint32_t)1 << 11)) {
+			setup_values.wh_tot = buffer_get_float32(data, 1e4, &ind);
+		}
+		if (mask & ((uint32_t)1 << 12)) {
+			setup_values.wh_charge_tot = buffer_get_float32(data, 1e4, &ind);
+		}
+		if (mask & ((uint32_t)1 << 13)) {
+			setup_values.distance = buffer_get_float32(data, 1e3, &ind);
+		}
+		if (mask & ((uint32_t)1 << 14)) {
+			setup_values.distance_abs = buffer_get_float32(data, 1e3, &ind);
+		}
+		if (mask & ((uint32_t)1 << 15)) {
+			setup_values.pid_pos = buffer_get_float32(data, 1e6, &ind);
+		}
+		if (mask & ((uint32_t)1 << 16)) {
+			setup_values.fault_code = data[ind++];
+		}
+		if (mask & ((uint32_t)1 << 17)) {
+			setup_values.vesc_id = data[ind++];
+		}
+		if (mask & ((uint32_t)1 << 18)) {
+			setup_values.num_vescs = data[ind++];
+		}
+		if (mask & ((uint32_t)1 << 19)) {
+			setup_values.wh_batt_left = buffer_get_float32(data, 1e3, &ind);
+		}
+
+		if (rx_setup_value_func) {
+			rx_setup_value_func(&setup_values);
+		}
+	} break;
 
 		// Print message from controller (COMM_PRINT)
 		// Data format: Null-terminated string
@@ -397,6 +540,11 @@ void bldc_interface_set_rx_value_func(void(*func)(mc_values *values)) {
 	rx_value_func = func;
 }
 
+// Set callback for setup values (battery level, Wh left, etc.)
+void bldc_interface_set_rx_setup_value_func(void(*func)(mc_setup_values *values)) {
+	rx_setup_value_func = func;
+}
+
 // Set callback for print/debug messages from controller
 // @param func Callback function with signature: void func(char *str)
 void bldc_interface_set_rx_printf_func(void(*func)(char *str)) {
@@ -407,6 +555,14 @@ void bldc_interface_set_rx_printf_func(void(*func)(char *str)) {
 // @param func Callback function with signature: void func(int major, int minor)
 void bldc_interface_set_rx_fw_func(void(*func)(int major, int minor)) {
 	rx_fw_func = func;
+}
+
+void bldc_interface_set_rx_fw_info_func(void(*func)(const fw_info *info)) {
+	rx_fw_info_func = func;
+}
+
+const fw_info* bldc_interface_get_fw_info(void) {
+	return &fwinfo;
 }
 
 // Set callback for rotor position updates
@@ -648,6 +804,21 @@ void bldc_interface_get_values(void) {
 	int32_t send_index = 0;
 	send_buffer[send_index++] = COMM_GET_VALUES; // Command ID
 	send_packet_no_fwd(send_buffer, send_index); // Send request
+}
+
+// Request setup values (battery level, Wh left, etc.)
+void bldc_interface_get_setup_values(void) {
+	int32_t send_index = 0;
+	send_buffer[send_index++] = COMM_GET_VALUES_SETUP;
+	send_packet_no_fwd(send_buffer, send_index);
+}
+
+// Request a subset of setup values using a bitmask
+void bldc_interface_get_setup_values_selective(uint32_t mask) {
+	int32_t send_index = 0;
+	send_buffer[send_index++] = COMM_GET_VALUES_SETUP_SELECTIVE;
+	buffer_append_uint32(send_buffer, mask, &send_index);
+	send_packet_no_fwd(send_buffer, send_index);
 }
 
 // Request motor configuration from the controller

@@ -1159,6 +1159,30 @@ typedef struct {
     uint8_t vesc_id;
 } mc_values;
 
+// Setup values (reply to COMM_GET_VALUES_SETUP / COMM_GET_VALUES_SETUP_SELECTIVE)
+typedef struct {
+	float temp_mos;					// bit 0
+	float temp_motor;				// bit 1
+	float current_tot;				// bit 2
+	float current_in_tot;			// bit 3
+	float duty_now;					// bit 4
+	float rpm;						// bit 5
+	float speed;					// bit 6
+	float v_in;						// bit 7
+	float battery_level;			// bit 8  (0.0 - 1.0, from VESC firmware)
+	float ah_tot;					// bit 9
+	float ah_charge_tot;			// bit 10
+	float wh_tot;					// bit 11
+	float wh_charge_tot;			// bit 12
+	float distance;					// bit 13
+	float distance_abs;				// bit 14
+	float pid_pos;					// bit 15
+	uint8_t fault_code;				// bit 16
+	uint8_t vesc_id;					// bit 17
+	uint8_t num_vescs;				// bit 18
+	float wh_batt_left;				// bit 19
+} mc_setup_values;
+
 // Communication commands
 typedef enum {
 	COMM_FW_VERSION = 0,
