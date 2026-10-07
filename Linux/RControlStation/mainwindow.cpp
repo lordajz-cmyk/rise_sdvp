@@ -172,14 +172,11 @@ MainWindow::MainWindow(QWidget *parent) :
         if (sparad.isEmpty()) {
             sparad = QSettings("SLU", "RControlStation").value("serverip").toString(); // Gunnars tidigare inställning
         }
-        mServerEdit = new QLineEdit(sparad, this);
-        mServerEdit->setObjectName("serveripEdit");
+        mServerEdit = ui->serveripEdit;     // fältet "Server ip" överst på fliken Farm
+        mServerEdit->setText(sparad);
         mServerEdit->setPlaceholderText(QString(STANDARD_SERVER) + " (Mapro)");
         mServerEdit->setToolTip("Webbserverns adress för gårdar, fält, banor och maskiner, "
                                 "t.ex. 192.168.200.1:8080. Tomt = Mapros server. Port 8080 om ingen anges.");
-        const int rad = ui->gridLayout_31->rowCount();
-        ui->gridLayout_31->addWidget(new QLabel("Server", this), rad, 0);
-        ui->gridLayout_31->addWidget(mServerEdit, rad, 2);
         connect(mServerEdit, &QLineEdit::editingFinished, this, [this]() {
             QSettings("RControlStation", "server").setValue("adress", mServerEdit->text().trimmed());
         });
